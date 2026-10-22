@@ -141,7 +141,13 @@ class CredentialsService {
         }
 
     private fun deleteCredential(wallet: Uuid, credentialId: String) =
-        transaction { WalletCredentials.deleteWhere { (WalletCredentials.wallet eq wallet.toJavaUuid()) and (id eq credentialId) } }
+        transaction {
+            // Category links reference the credential, so they go first
+            WalletCredentialCategoryMap.deleteWhere {
+                (WalletCredentialCategoryMap.wallet eq wallet) and (WalletCredentialCategoryMap.credential eq credentialId)
+            }
+            WalletCredentials.deleteWhere { (WalletCredentials.wallet eq wallet.toJavaUuid()) and (id eq credentialId) }
+        }
 
     private fun categorizedQuery(wallet: Uuid, deleted: Boolean?, pending: Boolean?, categories: List<String>) =
         WalletCredentials.innerJoin(

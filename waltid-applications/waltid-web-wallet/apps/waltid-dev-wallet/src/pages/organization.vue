@@ -181,6 +181,39 @@
           </li>
         </ul>
       </section>
+
+      <!-- Deleting: the creator asks, a super admin confirms (or deletes directly) -->
+      <section v-if="managedOrganization || organization?.creator" class="space-y-2">
+        <h2 class="text-lg font-semibold">Delete organization</h2>
+        <p class="text-sm text-gray-600">
+          Deletes the organization, all wallets of its addresses (with keys, DIDs and credentials), its members and invites.
+          This cannot be undone.
+        </p>
+        <template v-if="managedOrganization">
+          <p v-if="managedOrganization.deletionRequestedBy" class="rounded-md bg-yellow-50 p-2 text-sm text-yellow-800">
+            {{ managedOrganization.deletionRequestedBy }} asked to delete this organization.
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <button class="rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-500" type="button" @click="deleteOrganization">
+              Delete organization
+            </button>
+            <button v-if="managedOrganization.deletionRequestedBy" class="rounded-md bg-white px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 hover:bg-gray-50" type="button" @click="declineDeletion">
+              Decline request
+            </button>
+          </div>
+        </template>
+        <template v-else>
+          <div v-if="organization.deletionRequested" class="flex flex-wrap items-center gap-2 rounded-md bg-yellow-50 p-2 text-sm text-yellow-800">
+            You asked to delete this organization. A super admin has to confirm it.
+            <button class="rounded-md bg-white px-2.5 py-1.5 font-semibold ring-1 ring-inset ring-gray-300 hover:bg-gray-50" type="button" @click="withdrawDeletion">
+              Withdraw
+            </button>
+          </div>
+          <button v-else class="rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-500" type="button" @click="requestDeletion">
+            Ask to delete organization
+          </button>
+        </template>
+      </section>
     </div>
 
     <!-- The creator decides about changes of their own role -->
@@ -327,6 +360,33 @@ function removeMember(member) {
 
 const decideCreatorChange = (decision) =>
   run(() => $fetch(adminUrl(`/wallet-api/organization/creator-change/${decision}`), { method: "POST" }), "Could not save the decision.");
+
+function confirmName(action) {
+  const name = managedOrganization.value?.name || organization.value?.name;
+  return prompt(`${action} "${name}" with all its wallets, keys, DIDs and credentials? Type the organization's name to confirm.`) === name;
+}
+
+function requestDeletion() {
+  if (!confirmName("Ask to delete")) return;
+  return run(() => $fetch("/wallet-api/organization/deletion-request", { method: "POST" }), "Could not send the request.");
+}
+
+const withdrawDeletion = () =>
+  run(() => $fetch("/wallet-api/organization/deletion-request", { method: "DELETE" }), "Could not withdraw the request.");
+
+const declineDeletion = () =>
+  run(() => $fetch(adminUrl("/wallet-api/organization/deletion-request/decline"), { method: "POST" }), "Could not decline the request.");
+
+async function deleteOrganization() {
+  if (!confirmName("Delete")) return;
+  errorMessage.value = null;
+  try {
+    await $fetch(adminUrl("/wallet-api/organization/delete"), { method: "POST" });
+    await navigateTo("/organizations");
+  } catch (err) {
+    errorMessage.value = apiError(err, "Could not delete the organization.");
+  }
+}
 
 function removeAddress(entry) {
   if (!confirm(`Remove ${entry.address} from the organization? Members lose access to its wallet.`)) return;

@@ -46,6 +46,9 @@ private fun ApplicationCall.memberParam(): Uuid = Uuid.parse(parameters.getOrFai
 /** Super admins manage another organization with `?organizationId=...`; everyone else their own */
 private fun ApplicationCall.organizationParam(): Uuid? = request.queryParameters["organizationId"]?.let { Uuid.parse(it) }
 
+private fun ApplicationCall.requiredOrganizationParam(): Uuid =
+    organizationParam() ?: throw IllegalArgumentException("Please choose an organization (organizationId).")
+
 @Serializable
 data class ChangeResponse(val status: OrganizationService.ChangeResult, val message: String)
 
@@ -99,6 +102,48 @@ fun Application.organizationRoutes() {
                     response { HttpStatusCode.OK to { body<List<OrganizationOverview>>() } }
                 }) {
                     call.respond(OrganizationService.allOrganizations(call.accountUuid()))
+                }
+
+                route("deletion-request") {
+                    post({ summary = "The creator asks to delete the organization (a super admin confirms)" }) {
+                        OrganizationService.requestDeletion(call.accountUuid())
+                        call.respond(HttpStatusCode.Accepted)
+                    }
+                    delete({ summary = "The creator withdraws the deletion request" }) {
+                        OrganizationService.cancelDeletionRequest(call.accountUuid())
+                        call.respond(HttpStatusCode.NoContent)
+                    }
+                    post("decline", { summary = "A super admin declines the deletion request (organizationId required)" }) {
+                        OrganizationService.declineDeletion(call.accountUuid(), call.requiredOrganizationParam())
+                        call.respond(HttpStatusCode.NoContent)
+                    }
+                }
+
+                post("delete", {
+                    summary = "A super admin deletes an organization with its address wallets (organizationId required)"
+                }) {
+                    OrganizationService.deleteOrganization(call.accountUuid(), call.requiredOrganizationParam())
+                    call.respond(HttpStatusCode.NoContent)
+                }
+
+                route("super-admins") {
+                    get({
+                        summary = "Super admins (super admins only)"
+                        response { HttpStatusCode.OK to { body<List<SuperAdminEntry>>() } }
+                    }) {
+                        call.respond(OrganizationService.superAdmins(call.accountUuid()))
+                    }
+                    post({
+                        summary = "Add a super admin (built-in super admin only)"
+                        request { body<CreateInviteRequest>() }
+                    }) {
+                        OrganizationService.addSuperAdmin(call.accountUuid(), call.receive<CreateInviteRequest>().email)
+                        call.respond(HttpStatusCode.NoContent)
+                    }
+                    delete("{email}", { summary = "Remove an added super admin (built-in super admin only)" }) {
+                        OrganizationService.removeSuperAdmin(call.accountUuid(), call.parameters.getOrFail("email"))
+                        call.respond(HttpStatusCode.NoContent)
+                    }
                 }
 
                 route("creator-change") {

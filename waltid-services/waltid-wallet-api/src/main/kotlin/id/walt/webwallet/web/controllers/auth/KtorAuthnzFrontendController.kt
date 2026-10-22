@@ -129,7 +129,10 @@ fun Application.ktorAuthnzFrontendRoutes() {
                         }
                     }
                 }) {
-                    call.respond(AccountsService.get(Uuid.parse(call.getAuthenticatedAccount())))
+                    // A login token can outlive its account (e.g. after the database was reset): ask to log in again
+                    val account = runCatching { AccountsService.get(Uuid.parse(call.getAuthenticatedAccount())) }.getOrNull()
+                        ?: throw UnauthorizedException("This account no longer exists. Please log in again.")
+                    call.respond(account)
                 }
                 get("session", { summary = "Return session ID if logged in" }) {
                     val token = getAuthenticatedSession().token ?: throw UnauthorizedException("Invalid session")

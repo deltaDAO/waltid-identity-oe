@@ -25,6 +25,9 @@ object Organizations : Table("organizations") {
     val creatorChange = varchar("creator_change", 16).nullable()
     val creatorChangeRequestedBy = kotlinxUuid("creator_change_requested_by").nullable()
 
+    /** The creator asked to delete the organization; a super admin confirms */
+    val deletionRequestedBy = kotlinxUuid("deletion_requested_by").nullable()
+
     override val primaryKey = PrimaryKey(id)
 }
 
@@ -80,4 +83,14 @@ object OrganizationInvites : Table("organization_invites") {
     val usedOn = timestamp("used_on").nullable()
 
     override val primaryKey = PrimaryKey(code)
+}
+
+/** Super admins added in the wallet (by the built-in super admin), in addition to the built-in and configured ones */
+object SuperAdmins : Table("super_admins") {
+    /** Lowercase email */
+    val email = varchar("email", 128)
+    val addedBy = kotlinxUuid("added_by")
+    val addedOn = timestamp("added_on")
+
+    override val primaryKey = PrimaryKey(email)
 }

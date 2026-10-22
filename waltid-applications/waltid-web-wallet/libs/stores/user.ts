@@ -9,6 +9,13 @@ export const useUserStore = defineStore("userStore", () => {
     async function refreshUser() {
         try {
             const response = await fetch("/wallet-api/auth/user-info");
+            if (response.status === 401) {
+                // Logged in with an account that no longer exists: log out and start over at the login page
+                await fetch("/wallet-api/auth/logout", { method: "POST" }).catch(() => {});
+                user.value = { id: "", friendlyName: "" };
+                window.location.assign("/login");
+                return;
+            }
             if (!response.ok) return;
             const account = await response.json();
             user.value = { id: account.id ?? "", friendlyName: account.name || account.email || "" };

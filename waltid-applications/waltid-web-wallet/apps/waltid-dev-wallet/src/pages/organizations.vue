@@ -29,8 +29,50 @@
           {{ organization.pendingCreatorChange.change === 'REMOVE' ? 'remove the creator' : 'make the creator a user' }}:
           open "Manage" to confirm or decline.
         </p>
+        <p v-if="organization.deletionRequestedBy" class="rounded-md bg-red-50 p-2 text-sm text-red-800">
+          {{ organization.deletionRequestedBy }} asked to delete this organization: open "Manage" to delete or decline.
+        </p>
       </li>
     </ul>
+
+    <section class="mt-10 space-y-2">
+      <h2 class="text-lg font-semibold">Super admins</h2>
+      <p class="text-sm text-gray-600">
+        Super admins see and manage every organization.
+        <span v-if="canManageSuperAdmins">As built-in super admin, you add and remove the others.</span>
+        <span v-else>Only the built-in super admin can add or remove super admins.</span>
+      </p>
+      <form v-if="canManageSuperAdmins" class="flex flex-wrap items-center gap-2" @submit.prevent="addSuperAdmin">
+        <input
+          v-model="newSuperAdmin"
+          class="rounded-md border-0 py-1.5 px-2 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-blue-600 sm:text-sm min-w-[16rem]"
+          placeholder="name@company.com"
+          required
+          type="email"
+        />
+        <button class="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500" type="submit">
+          Add super admin
+        </button>
+      </form>
+      <ul class="divide-y divide-gray-100 border rounded-2xl px-2" role="list">
+        <li v-for="entry in superAdmins" :key="entry.email" class="flex flex-wrap items-center justify-between gap-2 py-3">
+          <span class="truncate">{{ entry.email }}</span>
+          <div class="flex items-center gap-2">
+            <span class="rounded-md px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset">
+              {{ entry.source === 'BUILT_IN' ? 'Built in' : entry.source === 'CONFIGURED' ? 'Server configuration' : 'Added' }}
+            </span>
+            <button
+              v-if="canManageSuperAdmins && entry.source === 'ADDED'"
+              class="rounded-md bg-red-500 px-2.5 py-1.5 text-sm font-semibold text-white hover:bg-red-600"
+              type="button"
+              @click="removeSuperAdmin(entry)"
+            >
+              Remove
+            </button>
+          </div>
+        </li>
+      </ul>
+    </section>
 
     <p v-if="errorMessage" class="mt-4 text-sm text-red-600" role="alert">{{ errorMessage }}</p>
   </CenterMain>
@@ -42,6 +84,9 @@ import LoadingIndicator from "@waltid-web-wallet/components/loading/LoadingIndic
 
 const pending = ref(true);
 const organizations = ref([]);
+const superAdmins = ref([]);
+const canManageSuperAdmins = ref(false);
+const newSuperAdmin = ref("");
 const errorMessage = ref(null);
 
 const activeMembers = (organization) => organization.members.filter((m) => m.status === "ACTIVE").length;
@@ -52,15 +97,45 @@ const admins = (organization) =>
     .map((m) => m.email || m.name)
     .join(", ");
 
-onMounted(async () => {
+async function load() {
+  errorMessage.value = null;
   try {
-    organizations.value = await $fetch("/wallet-api/organization/all");
+    const [all, admins, mine] = await Promise.all([
+      $fetch("/wallet-api/organization/all"),
+      $fetch("/wallet-api/organization/super-admins"),
+      $fetch("/wallet-api/organization"),
+    ]);
+    organizations.value = all;
+    superAdmins.value = admins;
+    canManageSuperAdmins.value = mine.canManageSuperAdmins;
   } catch (err) {
     errorMessage.value = err?.data?.message || "Could not load the organizations.";
   } finally {
     pending.value = false;
   }
-});
+}
+
+async function addSuperAdmin() {
+  try {
+    await $fetch("/wallet-api/organization/super-admins", { method: "POST", body: { email: newSuperAdmin.value } });
+    newSuperAdmin.value = "";
+    await load();
+  } catch (err) {
+    errorMessage.value = err?.data?.message || "Could not add the super admin.";
+  }
+}
+
+async function removeSuperAdmin(entry) {
+  if (!confirm(`Remove ${entry.email} as super admin?`)) return;
+  try {
+    await $fetch(`/wallet-api/organization/super-admins/${encodeURIComponent(entry.email)}`, { method: "DELETE" });
+    await load();
+  } catch (err) {
+    errorMessage.value = err?.data?.message || "Could not remove the super admin.";
+  }
+}
+
+onMounted(load);
 
 definePageMeta({
   layout: "default-reduced-nav",

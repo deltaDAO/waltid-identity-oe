@@ -42,6 +42,15 @@ data class OrganizationInfo(
     val creator: Boolean = false,
     /** Only for the creator: a change of their role that waits for their confirmation */
     val pendingCreatorChange: PendingCreatorChange? = null,
+    /** The creator asked to delete the organization; waits for a super admin */
+    val deletionRequested: Boolean = false,
+)
+
+@Serializable
+data class SuperAdminEntry(
+    val email: String,
+    /** BUILT_IN (in the code, cannot be removed), CONFIGURED (env SUPER_ADMIN_EMAILS) or ADDED (in the wallet) */
+    val source: String,
 )
 
 @Serializable
@@ -59,6 +68,8 @@ data class OrganizationOverview(
     val createdOn: String,
     val members: List<OrganizationMember>,
     val pendingCreatorChange: PendingCreatorChange? = null,
+    /** Email of the creator who asked to delete the organization */
+    val deletionRequestedBy: String? = null,
 )
 
 @Serializable
@@ -74,6 +85,8 @@ data class MyOrganization(
     val organization: OrganizationInfo?,
     /** The logged-in account may see and manage every organization */
     val superAdmin: Boolean = false,
+    /** The logged-in account is a built-in super admin and may add or remove other super admins */
+    val canManageSuperAdmins: Boolean = false,
 )
 
 @Serializable
@@ -129,7 +142,52 @@ object OrganizationService {
         System.getenv("SUPER_ADMIN_EMAILS").orEmpty().split(",").map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
     }
 
-    fun superAdminEmails(): Set<String> = builtInSuperAdmins + additionalSuperAdminEmails()
+    private fun addedSuperAdminEmails(): Set<String> = transaction {
+        SuperAdmins.selectAll().map { it[SuperAdmins.email] }.toSet()
+    }
+
+    fun superAdminEmails(): Set<String> = builtInSuperAdmins + additionalSuperAdminEmails() + addedSuperAdminEmails()
+
+    /** Built-in super admins manage the other super admins */
+    fun isBuiltInSuperAdmin(account: Uuid): Boolean =
+        isSuperAdmin(account) && emailOf(account)?.lowercase() in builtInSuperAdmins
+
+    private fun requireBuiltInSuperAdmin(caller: Uuid) {
+        if (!isBuiltInSuperAdmin(caller)) throw ForbiddenException("Only the built-in super admin can manage super admins.")
+    }
+
+    fun superAdmins(caller: Uuid): List<SuperAdminEntry> {
+        if (!isSuperAdmin(caller)) throw ForbiddenException("Only super admins can see the super admins.")
+        val configured = additionalSuperAdminEmails()
+        val added = addedSuperAdminEmails()
+        return builtInSuperAdmins.map { SuperAdminEntry(it, "BUILT_IN") } +
+                (configured - builtInSuperAdmins).map { SuperAdminEntry(it, "CONFIGURED") } +
+                (added - builtInSuperAdmins - configured).map { SuperAdminEntry(it, "ADDED") }
+    }
+
+    fun addSuperAdmin(caller: Uuid, email: String) {
+        requireBuiltInSuperAdmin(caller)
+        val normalized = email.trim().lowercase()
+        require(emailRegex.matches(normalized)) { "Please enter a valid email address." }
+        if (normalized in superAdminEmails()) throw ConflictException("$normalized is already a super admin.")
+        transaction {
+            SuperAdmins.insert {
+                it[SuperAdmins.email] = normalized
+                it[addedBy] = caller
+                it[addedOn] = now()
+            }
+        }
+    }
+
+    fun removeSuperAdmin(caller: Uuid, email: String) {
+        requireBuiltInSuperAdmin(caller)
+        val normalized = email.trim().lowercase()
+        if (normalized in builtInSuperAdmins) throw ConflictException("Built-in super admins cannot be removed.")
+        if (normalized in additionalSuperAdminEmails())
+            throw ConflictException("This super admin is set in the server configuration (SUPER_ADMIN_EMAILS); remove it there.")
+        val removed = transaction { SuperAdmins.deleteWhere { SuperAdmins.email eq normalized } }
+        if (removed == 0) throw NotFoundException("$normalized is not a super admin.")
+    }
 
     private fun emailOf(account: Uuid): String? = transaction {
         Accounts.selectAll().where { Accounts.id eq account }.singleOrNull()?.get(Accounts.email)
@@ -238,7 +296,8 @@ object OrganizationService {
 
     fun myOrganization(account: Uuid): MyOrganization = transaction {
         val superAdmin = isSuperAdmin(account)
-        val membership = membershipOf(account) ?: return@transaction MyOrganization(null, superAdmin)
+        val membership = membershipOf(account)
+            ?: return@transaction MyOrganization(null, superAdmin, isBuiltInSuperAdmin(account))
         val organizationId = membership[OrganizationMembers.organization]
         val organization = Organizations.selectAll().where { Organizations.id eq organizationId }.single()
         val isCreator = creatorOf(organizationId) == account
@@ -250,8 +309,10 @@ object OrganizationService {
                 status = membership[OrganizationMembers.status],
                 creator = isCreator,
                 pendingCreatorChange = if (isCreator) pendingCreatorChange(organizationId) else null,
+                deletionRequested = organization[Organizations.deletionRequestedBy] != null,
             ),
             superAdmin,
+            isBuiltInSuperAdmin(account),
         )
     }
 
@@ -435,6 +496,7 @@ object OrganizationService {
                     createdOn = row[Organizations.createdOn].toString(),
                     members = membersOf(organization),
                     pendingCreatorChange = pendingCreatorChange(organization),
+                    deletionRequestedBy = row[Organizations.deletionRequestedBy]?.let { emailOf(it) ?: it.toString() },
                 )
             }
         }
@@ -561,6 +623,45 @@ object OrganizationService {
             }
             OrganizationMembers.deleteWhere { account eq member }
         }
+    }
+
+    // --- Deleting an organization ---
+
+    /** The creator asks to delete their organization; a super admin confirms ([deleteOrganization]) or declines */
+    fun requestDeletion(caller: Uuid) {
+        val organization = membershipOf(caller)?.get(OrganizationMembers.organization)
+            ?: throw NotFoundException("You do not belong to an organization.")
+        if (creatorOf(organization) != caller) throw ForbiddenException("Only the creator can ask to delete the organization.")
+        transaction { Organizations.update({ Organizations.id eq organization }) { it[deletionRequestedBy] = caller } }
+    }
+
+    fun cancelDeletionRequest(caller: Uuid) {
+        val organization = membershipOf(caller)?.get(OrganizationMembers.organization)
+            ?: throw NotFoundException("You do not belong to an organization.")
+        if (creatorOf(organization) != caller) throw ForbiddenException("Only the creator can withdraw the deletion request.")
+        transaction { Organizations.update({ Organizations.id eq organization }) { it[deletionRequestedBy] = null } }
+    }
+
+    fun declineDeletion(superAdmin: Uuid, organizationId: Uuid) {
+        adminOrganization(superAdmin, organizationId)
+        transaction { Organizations.update({ Organizations.id eq organizationId }) { it[deletionRequestedBy] = null } }
+    }
+
+    /**
+     * Super admins delete an organization (on request of its creator, or directly): its address wallets with
+     * keys, DIDs and credentials, all memberships, invites and access. Address accounts stay, without wallet.
+     */
+    fun deleteOrganization(superAdmin: Uuid, organizationId: Uuid) {
+        adminOrganization(superAdmin, organizationId)
+        val wallets = organizationWallets(organizationId)
+        // Address rows reference the wallets, so they go first
+        transaction {
+            OrganizationAddresses.deleteWhere { OrganizationAddresses.organization eq organizationId }
+            OrganizationInvites.deleteWhere { OrganizationInvites.organization eq organizationId }
+            OrganizationMembers.deleteWhere { OrganizationMembers.organization eq organizationId }
+            Organizations.deleteWhere { Organizations.id eq organizationId }
+        }
+        wallets.forEach { PersonalWalletCleanup.deleteWalletCompletely(it) }
     }
 
     // --- Addresses and wallet access ---

@@ -48,7 +48,7 @@ class OrganizationServiceTest {
         Accounts, Wallets, WalletKeys, WalletDids, WalletCredentials, WalletCategory, WalletCredentialCategoryMap,
         WalletIssuers, WalletOperationHistories, WalletSettings, WalletNotifications, Events, AccountWalletMappings,
         AuthnzUsers, AuthnzAccountIdentifiers, AuthnzStoredData,
-        Organizations, OrganizationMembers, OrganizationAddresses, OrganizationInvites,
+        Organizations, OrganizationMembers, OrganizationAddresses, OrganizationInvites, SuperAdmins,
     )
 
     private lateinit var admin: Uuid
@@ -459,5 +459,53 @@ class OrganizationServiceTest {
         // Only themselves
         OrganizationService.setRole(root, root, OrganizationRole.USER)
         assertEquals(OrganizationRole.USER, OrganizationService.myOrganization(root).organization!!.role)
+    }
+
+    @Test
+    fun `the creator asks to delete, a super admin confirms or declines`() = runBlocking<Unit> {
+        organizationWithMembers()
+        val organizationId = Uuid.parse(OrganizationService.myOrganization(admin).organization!!.id)
+        OrganizationService.linkVerifiedAddress(admin, address(11), fakeCreateWallet)
+        val wallet = OrganizationService.addresses(admin).single().walletId
+
+        assertFailsWith<ForbiddenException> { OrganizationService.requestDeletion(alice) }
+        assertFailsWith<ForbiddenException> { OrganizationService.deleteOrganization(admin, organizationId) }
+
+        OrganizationService.requestDeletion(admin)
+        assertTrue(OrganizationService.myOrganization(admin).organization!!.deletionRequested)
+        assertEquals("admin@example.com", OrganizationService.allOrganizations(superAdmin).single().deletionRequestedBy)
+
+        OrganizationService.declineDeletion(superAdmin, organizationId)
+        assertTrue(!OrganizationService.myOrganization(admin).organization!!.deletionRequested)
+
+        OrganizationService.requestDeletion(admin)
+        OrganizationService.deleteOrganization(superAdmin, organizationId)
+
+        assertNull(OrganizationService.myOrganization(admin).organization)
+        assertNull(OrganizationService.myOrganization(alice).organization)
+        assertTrue(OrganizationService.allOrganizations(superAdmin).isEmpty())
+        transaction(database) {
+            assertTrue(Wallets.selectAll().where { Wallets.id eq java.util.UUID.fromString(wallet) }.empty(), "Address wallet is deleted")
+        }
+    }
+
+    @Test
+    fun `only the built-in super admin manages super admins`() {
+        val alex = person("alex@delta-dao.com")
+        val carol = person("carol@example.com")
+        assertTrue(OrganizationService.myOrganization(alex).canManageSuperAdmins)
+        assertTrue(!OrganizationService.myOrganization(superAdmin).canManageSuperAdmins)
+
+        assertFailsWith<ForbiddenException> { OrganizationService.addSuperAdmin(superAdmin, "carol@example.com") }
+        OrganizationService.addSuperAdmin(alex, "Carol@Example.com")
+        assertTrue(OrganizationService.isSuperAdmin(carol))
+        assertEquals("ADDED", OrganizationService.superAdmins(alex).single { it.email == "carol@example.com" }.source)
+
+        assertFailsWith<ConflictException> { OrganizationService.removeSuperAdmin(alex, "alex@delta-dao.com") }
+        assertFailsWith<ConflictException> { OrganizationService.removeSuperAdmin(alex, "root@example.com") } // configured
+        assertFailsWith<ForbiddenException> { OrganizationService.removeSuperAdmin(carol, "carol@example.com") }
+
+        OrganizationService.removeSuperAdmin(alex, "carol@example.com")
+        assertTrue(!OrganizationService.isSuperAdmin(carol))
     }
 }
