@@ -18,6 +18,7 @@ import id.walt.webwallet.web.controllers.auth.defaultAuthRoutes
 import id.walt.webwallet.web.controllers.auth.keycloak.keycloakAuthRoutes
 import id.walt.webwallet.web.controllers.auth.ktorAuthnzFrontendRoutes
 import id.walt.webwallet.web.controllers.auth.ktorAuthnzRoutes
+import id.walt.webwallet.web.controllers.auth.loginAddressRoutes
 import id.walt.webwallet.web.controllers.auth.oidc.oidcAuthRoutes
 import id.walt.webwallet.web.controllers.auth.x5c.x5cAuthRoutes
 import id.walt.webwallet.web.controllers.exchange.exchange
@@ -79,6 +80,7 @@ fun Application.webWalletModule(withPlugins: Boolean = true) {
     {
         ktorAuthnzRoutes()
         ktorAuthnzFrontendRoutes()
+        loginAddressRoutes()
     } whenFeature FeatureCatalog.ktorAuthnzAuthenticationFeature
 
 

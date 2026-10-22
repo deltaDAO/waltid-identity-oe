@@ -2,6 +2,49 @@
   <CenterMain>
     <h1 class="font-semibold">Profile</h1>
     <p>Username: {{ user.friendlyName }}</p>
+
+    <!-- login-addresses: EVM addresses that log into this account (e.g. from the Enterprise market) -->
+    <h2 class="font-semibold mt-6">Login addresses</h2>
+    <p class="text-sm text-gray-600">
+      Logging into the Enterprise market with one of these wallets opens this SSI wallet account.
+    </p>
+    <div class="mt-4">
+      <button
+        class="inline-flex items-center rounded-md bg-blue-500 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+        type="button"
+        @click="linkLoginAddress"
+      >
+        <PlusIcon aria-hidden="true" class="-ml-0.5 mr-1.5 h-5 w-5" />
+        Link login address
+      </button>
+    </div>
+    <LoadingIndicator v-if="loginAddressesPending">Loading</LoadingIndicator>
+    <h3 v-else-if="!loginAddresses || loginAddresses.length === 0" class="font-semibold mt-2">
+      No login addresses
+    </h3>
+    <ul
+      v-else
+      class="divide-y divide-gray-100 border rounded-2xl mt-2 px-2"
+      role="list"
+    >
+      <li
+        v-for="loginAddress in loginAddresses"
+        :key="loginAddress.address"
+        class="flex items-center justify-between gap-x-6 py-4"
+      >
+        <span class="truncate text-base font-normal">{{ loginAddress.address }}</span>
+        <button
+          class="rounded-md bg-red-500 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-600"
+          type="button"
+          @click="removeLoginAddress(loginAddress.address)"
+        >
+          Remove
+        </button>
+      </li>
+    </ul>
+    <p v-if="loginAddressError" class="text-sm text-red-600 mt-2" role="alert">{{ loginAddressError }}</p>
+
+    <h2 class="font-semibold mt-8">Watched addresses</h2>
     <!-- add-wallet -->
     <div class="items-center">
       <div class="mt-4">
@@ -11,15 +54,15 @@
           @click="addWallet"
         >
           <PlusIcon aria-hidden="true" class="-ml-0.5 mr-1.5 h-5 w-5" />
-          Add wallet address
+          Add watched address
         </button>
       </div>
     </div>
     <LoadingIndicator v-if="pending">Loading</LoadingIndicator>
     <span v-else-if="wallets && wallets.length > 0" class="font-semibold"
-      >Your connected addresses ({{ wallets.length }}):</span
+      >Your watched addresses ({{ wallets.length }}):</span
     >
-    <h3 v-else class="font-semibold">No connected addresses</h3>
+    <h3 v-else class="font-semibold">No watched addresses</h3>
     <!-- wallet-list -->
     <ul
       class="divide-y divide-gray-100 list-decimal border rounded-2xl mt-2 px-2"
@@ -72,6 +115,7 @@ import CenterMain from "@waltid-web-wallet/components/CenterMain.vue";
 import {PlusIcon} from "@heroicons/vue/20/solid";
 import Web3WalletIcon from "@waltid-web-wallet/components/Web3WalletIcon.vue";
 import AddWalletModal from "@waltid-web-wallet/components/modals/AddWalletModal.vue";
+import LinkLoginAddressModal from "~/components/profile/LinkLoginAddressModal.vue";
 import {useCurrentWallet} from "@waltid-web-wallet/composables/accountWallet.ts";
 import useModalStore from "@waltid-web-wallet/stores/useModalStore.ts";
 import {useUserStore} from "@waltid-web-wallet/stores/user.ts";
@@ -91,6 +135,33 @@ const {
 } = await useLazyFetch(
   `/wallet-api/wallet/${currentWallet.value}/web3accounts`,
 );
+
+const {
+  data: loginAddresses,
+  pending: loginAddressesPending,
+  refresh: refreshLoginAddresses,
+} = await useLazyFetch("/wallet-api/auth/login-addresses");
+const loginAddressError = ref(null);
+
+function linkLoginAddress() {
+  loginAddressError.value = null;
+  modalStore.openModal({
+    component: LinkLoginAddressModal,
+    props: {
+      callback: () => refreshLoginAddresses(),
+    },
+  });
+}
+
+async function removeLoginAddress(address) {
+  loginAddressError.value = null;
+  if (!confirm(`Remove ${address}? Logging into the market with it will no longer open this account.`)) return;
+  await $fetch(`/wallet-api/auth/login-addresses/${address}`, { method: "DELETE" })
+    .then(() => refreshLoginAddresses())
+    .catch((err) => {
+      loginAddressError.value = err?.data?.message || "Could not remove the address.";
+    });
+}
 
 function addWallet() {
   modalStore.openModal({

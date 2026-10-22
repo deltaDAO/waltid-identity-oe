@@ -24,7 +24,10 @@ data class KtorAuthnzConfig(
     /** Hash algorithm to use for passwords for signing */
     val hashAlgorithm: PasswordHashingAlgorithm,
 
-    val authFlow: AuthFlow = AuthFlow.fromConfig(defaultAuthFlowJson),
+    /** Single auth flow (kept for existing configs). Use [authFlows] to run several login methods side by side. */
+    val authFlow: AuthFlow? = null,
+    /** Several auth flows, e.g. email and web3, each with its own login routes */
+    val authFlows: List<AuthFlow>? = null,
 
     /**
      * If previously you used other (older) password hash algorithms, you
@@ -45,4 +48,8 @@ data class KtorAuthnzConfig(
 ) {
     val configuredSigningKey by lazy { signingKey?.let { KeyManager.resolveSerializedKeyBlocking(it.toString()) } }
     val configuredVerificationKey by lazy { KeyManager.resolveSerializedKeyBlocking(verificationKey.toString()) }
+
+    val flowConfigs: List<AuthFlow>
+        get() = (listOfNotNull(authFlow) + authFlows.orEmpty())
+            .ifEmpty { listOf(AuthFlow.fromConfig(defaultAuthFlowJson)) }
 }

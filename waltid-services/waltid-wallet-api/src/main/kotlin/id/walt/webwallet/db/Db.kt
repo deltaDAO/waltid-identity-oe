@@ -10,6 +10,7 @@ import id.walt.webwallet.db.models.*
 import id.walt.webwallet.db.models.authnz.AuthnzAccountIdentifiers
 import id.walt.webwallet.db.models.authnz.AuthnzStoredData
 import id.walt.webwallet.db.models.authnz.AuthnzUsers
+import id.walt.webwallet.service.account.authnz.AuthenticationService
 import id.walt.webwallet.service.account.AccountsService
 import id.walt.webwallet.web.model.EmailAccountRequest
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -128,6 +129,10 @@ object Db {
                 }
             }
 
+        }
+
+        if (FeatureManager.isFeatureEnabled(FeatureCatalog.ktorAuthnzAuthenticationFeature)) {
+            AuthenticationService.migrateLegacyWeb3Identifiers()
         }
     }
 

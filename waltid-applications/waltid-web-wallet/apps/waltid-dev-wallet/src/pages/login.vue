@@ -603,31 +603,24 @@ async function login() {
     console.log("logging in");
     isLoggingIn.value = true;
 
-    const userData = {
-        email: emailInput,
-        password: passwordInput
-    };
+    // ktor-authnz: check email + password, then hand the session token to nuxt-auth (same as web3 login)
+    const response = await fetch("/wallet-api/auth/account/emailpass", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailInput, password: passwordInput })
+    }).catch(() => null);
+    const result = response?.ok ? await response.json().catch(() => null) : null;
 
-    // try {
-    await signIn(
-        { email: emailInput, password: passwordInput, type: "email" },
-        { callbackUrl: signInRedirectUrl.value }
-    )
-        .then(() => {
-            user.value = {
-                id: "",
-                friendlyName: userData.email
-            };
-        })
-        .catch((err) => {
-            console.log("Could not sign in", err);
-            error.value = {
-                isError: true,
-                message:
-                    "Please check that you have entered your correct email address and password!" //(await response.text())
-            };
-            isLoggingIn.value = false;
-        });
+    if (!result?.token) {
+        error.value = {
+            isError: true,
+            message: "Please check that you have entered your correct email address and password!"
+        };
+        isLoggingIn.value = false;
+        return;
+    }
+
+    await authnzLogin(emailInput, result.token);
 }
 
 function closeModal() {

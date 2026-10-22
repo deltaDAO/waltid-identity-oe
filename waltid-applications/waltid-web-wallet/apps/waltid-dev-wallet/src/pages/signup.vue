@@ -83,7 +83,8 @@
                   <input
                     id="password"
                     v-model="passwordInput"
-                    autocomplete="current-password"
+                    autocomplete="new-password"
+                    :minlength="MIN_PASSWORD_LENGTH"
                     class="block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6 px-2 text-gray-600"
                     name="password"
                     required="true"
@@ -204,8 +205,21 @@ let emailInput = "";
 let passwordInput = "";
 let passwordConfirmInput = "";
 
+// Same minimum as the wallet API (POST /wallet-api/auth/register)
+const MIN_PASSWORD_LENGTH = 8;
+
 async function register() {
-  if (!validatePassword()) {
+  if (passwordInput.length < MIN_PASSWORD_LENGTH) {
+    store.openModal({
+      component: ActionResultModal,
+      props: {
+        title: "Error",
+        message: `The password must be at least ${MIN_PASSWORD_LENGTH} characters long.`,
+        isError: true,
+        open: true,
+      },
+    });
+  } else if (!validatePassword()) {
     store.openModal({
       component: ActionResultModal,
       props: {
@@ -258,23 +272,24 @@ async function submit() {
     })
     .catch((err) => {
       isProgress.value = false;
+      const status = err?.response?.status;
       let errorMessage = "An error occurred while registering your account.";
-      if (err.data.statusCode === 500) {
+      if (status === 409) {
+        errorMessage = err?.data?.message || "An account with this email address is already registered.";
+      } else if (status >= 500) {
         errorMessage = "Internal server error. Please try again later.";
-      } else if (err.data) {
-        errorMessage = err.data;
+      } else if (err?.data?.message) {
+        errorMessage = err.data.message;
       }
 
+      // Stay on the sign-up page, so the input can be corrected
       store.openModal({
         component: ActionResultModal,
         props: {
           title: "Error",
-          message: errorMessage.message,
+          message: errorMessage,
           isError: true,
           open: true,
-          callback: () => {
-            navigateTo("/");
-          },
         },
       });
     });
