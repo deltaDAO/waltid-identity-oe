@@ -19,6 +19,9 @@
 
         <div class="mt-8">
           <div class="mt-6">
+            <p v-if="inviteCode" class="mb-4 rounded-md bg-blue-50 p-3 text-sm text-blue-900">
+              Create your account with the invited email address. After logging in, you join the organization.
+            </p>
             <form class="space-y-6" @submit.prevent="register">
               <!-- name -->
               <div>
@@ -59,6 +62,7 @@
                 <div class="mt-2">
                   <input
                     id="email"
+                    :readonly="!!inviteCode"
                     v-model="emailInput"
                     autocomplete="email"
                     class="block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6 px-2 text-gray-600"
@@ -200,8 +204,13 @@ const isProgress = ref(false);
 const success = ref(false);
 const store = useModalStore();
 
+// Opened from an invite link: the invited email is fixed, and after login the invite is used
+const route = useRoute();
+const inviteCode = route.query.invite ? String(route.query.invite) : null;
+const afterSignupUrl = inviteCode ? `/login?redirect=${encodeURIComponent(`/invite/${inviteCode}`)}` : "/";
+
 let nameInput = "";
-let emailInput = "";
+let emailInput = route.query.email ? String(route.query.email) : "";
 let passwordInput = "";
 let passwordConfirmInput = "";
 
@@ -263,12 +272,12 @@ async function submit() {
           isError: false,
           open: true,
           callback: () => {
-            navigateTo("/");
+            navigateTo(afterSignupUrl);
           },
         },
       });
 
-      navigateTo("/");
+      navigateTo(afterSignupUrl);
     })
     .catch((err) => {
       isProgress.value = false;

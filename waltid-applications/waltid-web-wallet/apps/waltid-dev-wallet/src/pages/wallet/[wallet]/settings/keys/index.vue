@@ -14,7 +14,7 @@
           />
           <span>Sign & Verify</span>
         </button>
-        <button
+        <button v-if="isWalletAdmin"
           class="inline-flex items-center bg-blue-500 hover:bg-blue-600 focus-visible:outline-blue-600 rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
           @click="importKey"
         >
@@ -25,7 +25,7 @@
           <span>Import key</span>
         </button>
 
-        <button
+        <button v-if="isWalletAdmin"
           class="inline-flex items-center bg-blue-500 hover:bg-blue-600 focus-visible:outline-blue-600 rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
           @click="generateKey"
         >
@@ -100,9 +100,13 @@
 </template>
 
 <script lang="ts" setup>
+import {useIsWalletAdmin} from "@waltid-web-wallet/composables/accountWallet.ts";
 import CenterMain from "@waltid-web-wallet/components/CenterMain.vue";
 import {useCurrentWallet} from "@waltid-web-wallet/composables/accountWallet.ts";
 import {ArrowUturnLeftIcon, CheckIcon, HashtagIcon, InboxArrowDownIcon, KeyIcon} from "@heroicons/vue/24/outline";
+
+// Only admins of the wallet see the buttons that create, import or delete keys, DIDs and credentials
+const isWalletAdmin = await useIsWalletAdmin();
 
 const currentWallet = useCurrentWallet();
 

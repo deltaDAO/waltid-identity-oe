@@ -412,7 +412,7 @@ function addAddress() {
 }
 
 async function copyInviteLink(invite) {
-  const link = `${window.location.origin}/organization?invite=${invite.code}`;
+  const link = `${window.location.origin}/invite/${invite.code}`;
   try {
     await navigator.clipboard.writeText(link);
     copiedCode.value = invite.code;
@@ -431,6 +431,7 @@ onMounted(async () => {
 
 definePageMeta({
   layout: "default-reduced-nav",
+  middleware: ["auth-required"],
 });
 
 useHead({

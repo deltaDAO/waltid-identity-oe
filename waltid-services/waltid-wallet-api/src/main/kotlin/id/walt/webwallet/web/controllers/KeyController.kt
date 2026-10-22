@@ -21,6 +21,13 @@ import kotlinx.serialization.json.*
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import kotlin.uuid.ExperimentalUuidApi
 
+
+/** Members of a JWK that belong to the private key */
+private val PRIVATE_JWK_MEMBERS = setOf("d", "p", "q", "dp", "dq", "qi", "oth", "k")
+
+private fun ApplicationCall.isWalletAdmin(): Boolean =
+    runCatching { ensurePermissionsForWallet(AccountWalletPermissions.ADMINISTRATE) }.isSuccess
+
 fun Application.keys() = walletRoute {
     route("keys", {
         tags = listOf("Keys")
@@ -250,11 +257,11 @@ fun Application.keys() = walletRoute {
                     }
                 }
             }) {
-                call.respond(
-                    call.getWalletService().loadKey(
-                        call.parameters["keyId"] ?: throw IllegalArgumentException("No key supplied")
-                    )
+                val key = call.getWalletService().loadKey(
+                    call.parameters["keyId"] ?: throw IllegalArgumentException("No key supplied")
                 )
+                // Only admins of the wallet may see the private key; members get the public part
+                call.respond(if (call.isWalletAdmin()) key else JsonObject(key.filterKeys { it !in PRIVATE_JWK_MEMBERS }))
             }
 
             get("meta", {
@@ -291,6 +298,8 @@ fun Application.keys() = walletRoute {
 
                 val format = call.request.queryParameters["format"] ?: "JWK"
                 val loadPrivateKey = call.request.queryParameters["loadPrivateKey"].toBoolean()
+                // Exporting the private key is for admins of the wallet only
+                if (loadPrivateKey) call.ensurePermissionsForWallet(AccountWalletPermissions.ADMINISTRATE)
 
                 call.respond(call.getWalletService().exportKey(keyId, format, loadPrivateKey))
             }

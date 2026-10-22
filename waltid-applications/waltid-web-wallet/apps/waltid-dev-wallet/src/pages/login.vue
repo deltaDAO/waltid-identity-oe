@@ -390,7 +390,8 @@ const isLoggingIn = ref(false);
 const error = ref({});
 const success = ref(false);
 
-let emailInput = "";
+// Prefilled e.g. from an invite link (/login?email=...)
+let emailInput = useRoute().query.email ? String(useRoute().query.email) : "";
 let passwordInput = "";
 
 const userStore = useUserStore();
@@ -770,6 +771,12 @@ onMounted(() => {
   if (route.redirectedFrom) {
     console.log(`Redirected from: ${JSON.stringify(route.redirectedFrom)}`);
     signInRedirectUrl.value = route.redirectedFrom.fullPath;
+  }
+
+  // e.g. from an invite link: /login?redirect=/invite/<code> (only paths inside the wallet)
+  const redirect = route.query.redirect;
+  if (typeof redirect === "string" && redirect.startsWith("/") && !redirect.startsWith("//")) {
+    signInRedirectUrl.value = redirect;
   }
 
   isOidcLogin.value = route.query.oidc_login == "true";

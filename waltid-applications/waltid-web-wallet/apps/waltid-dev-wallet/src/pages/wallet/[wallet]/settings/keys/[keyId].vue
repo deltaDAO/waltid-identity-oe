@@ -56,7 +56,7 @@
         </div>
 
         <div class="mt-4 flex items-center justify-end gap-x-6">
-        <button
+        <button v-if="isWalletAdmin"
           class="inline-flex justify-center bg-red-600 hover:bg-red-500 focus-visible:outline-red-700 rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
           @click="deleteKey"
         >
@@ -165,12 +165,16 @@
 </template>
 
 <script lang="ts" setup>
+import {useIsWalletAdmin} from "@waltid-web-wallet/composables/accountWallet.ts";
 import CenterMain from "@waltid-web-wallet/components/CenterMain.vue";
 import BackButton from "@waltid-web-wallet/components/buttons/BackButton.vue";
 import {ArrowUpOnSquareIcon, ExclamationTriangleIcon, TrashIcon} from "@heroicons/vue/24/outline";
 import {useCurrentWallet} from "@waltid-web-wallet/composables/accountWallet.ts";
 import {computed, onMounted, ref} from "vue";
 import {Switch, SwitchGroup, SwitchLabel} from "@headlessui/vue";
+
+// Only admins of the wallet see the buttons that create, import or delete keys, DIDs and credentials
+const isWalletAdmin = await useIsWalletAdmin();
 
 const route = useRoute();
 

@@ -100,10 +100,15 @@ const admins = (organization) =>
 async function load() {
   errorMessage.value = null;
   try {
-    const [all, admins, mine] = await Promise.all([
+    const mine = await $fetch("/wallet-api/organization");
+    // Only for super admins: everyone else goes to their own organization
+    if (!mine.superAdmin) {
+      await navigateTo("/organization");
+      return;
+    }
+    const [all, admins] = await Promise.all([
       $fetch("/wallet-api/organization/all"),
       $fetch("/wallet-api/organization/super-admins"),
-      $fetch("/wallet-api/organization"),
     ]);
     organizations.value = all;
     superAdmins.value = admins;
@@ -139,6 +144,7 @@ onMounted(load);
 
 definePageMeta({
   layout: "default-reduced-nav",
+  middleware: ["auth-required"],
 });
 
 useHead({

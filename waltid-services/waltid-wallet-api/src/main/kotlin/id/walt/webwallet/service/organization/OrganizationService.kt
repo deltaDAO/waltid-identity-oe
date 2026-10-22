@@ -46,6 +46,15 @@ data class OrganizationInfo(
     val deletionRequested: Boolean = false,
 )
 
+/** What an invite link shows before login: whom it invites to which organization */
+@Serializable
+data class InviteInfo(
+    val organizationName: String,
+    val email: String,
+    /** An account with the invited email exists: the invite page only offers to log in */
+    val accountExists: Boolean = false,
+)
+
 @Serializable
 data class SuperAdminEntry(
     val email: String,
@@ -410,6 +419,18 @@ object OrganizationService {
                 (OrganizationInvites.code eq code) and (OrganizationInvites.organization eq organization) and (usedBy.isNull())
             }
         }
+    }
+
+    /** Public (no login): the organization and email of a valid invite, so the invite page can offer sign-up */
+    fun inviteInfo(code: String): InviteInfo = transaction {
+        val invite = OrganizationInvites.selectAll().where { OrganizationInvites.code eq code.trim() }.singleOrNull()
+        if (invite == null || invite[OrganizationInvites.usedBy] != null || invite[OrganizationInvites.expiresOn] <= now())
+            throw NotFoundException("This invite is not valid anymore (used, expired or revoked). Ask your admin for a new one.")
+        val organizationName = Organizations.selectAll()
+            .where { Organizations.id eq invite[OrganizationInvites.organization] }.single()[Organizations.name]
+        val email = invite[OrganizationInvites.email]
+        val accountExists = Accounts.selectAll().where { Accounts.email.lowerCase() eq email }.any()
+        InviteInfo(organizationName, email, accountExists)
     }
 
     /** Joins with a personal invite: only the invited email can use it, once; the invite is the admin's approval */

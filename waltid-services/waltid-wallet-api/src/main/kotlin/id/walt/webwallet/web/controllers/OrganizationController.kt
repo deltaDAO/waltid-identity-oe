@@ -62,6 +62,16 @@ private suspend fun ApplicationCall.respondChange(result: OrganizationService.Ch
 
 fun Application.organizationRoutes() {
     routing {
+        // Public: the invite page shows whom an invite is for, before the person has an account or is logged in
+        route("/wallet-api/organization/invite-info", { tags("Organization") }) {
+            get("{code}", {
+                summary = "Organization and email of a valid invite (no login needed)"
+                response { HttpStatusCode.OK to { body<InviteInfo>() } }
+            }) {
+                call.respond(OrganizationService.inviteInfo(call.parameters.getOrFail("code")))
+            }
+        }
+
         authenticate(KTOR_AUTHNZ_CONFIG_NAME) {
             route("/wallet-api/organization", {
                 tags("Organization")

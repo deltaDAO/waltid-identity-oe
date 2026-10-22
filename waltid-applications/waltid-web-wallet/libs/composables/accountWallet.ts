@@ -1,4 +1,5 @@
 import {navigateTo, useFetch, useRoute, useState} from "nuxt/app";
+import {computed} from "vue";
 
 export type WalletListing = {
     id: string,
@@ -42,4 +43,16 @@ export function useCurrentWallet() {
             return currentWalletId;
         }
     });
+}
+
+/**
+ * Whether the logged-in account is an admin (ADMINISTRATE) of the current wallet.
+ * Only admins may create, import or delete keys, DIDs and credentials; members only use the wallet.
+ */
+export async function useIsWalletAdmin() {
+    const currentWallet = useCurrentWallet();
+    const { data } = await useFetch<WalletListings>("/wallet-api/wallet/accounts/wallets");
+    return computed(() =>
+        data.value?.wallets?.find((wallet) => wallet.id === currentWallet.value)?.permission === "ADMINISTRATE"
+    );
 }

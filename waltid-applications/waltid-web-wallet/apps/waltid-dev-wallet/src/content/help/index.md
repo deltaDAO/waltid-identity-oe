@@ -15,8 +15,9 @@ Wallets belong to organizations, not to single users.
 
 - Whoever creates an organization becomes its **admin** and its **creator**. Admins invite, accept or remove
   members and can make other members admins.
-- **Invites** are personal: an admin creates an invite for one email address and sends you the link. It works
-  once, for 14 days, and only when you are logged in with that email address. You join right away.
+- **Invites** are personal: an admin creates an invite for one email address and sends you the link. Open it,
+  create your account with that email address (or log in if you have one), and you join right away. The link
+  works once, for 14 days, and only for the invited email address.
 - You can also **ask to join** with the exact name of the organization under **Organization**. An admin has to
   accept your request.
 - Making the creator a user, or removing them, needs the creator's confirmation (or a super admin's).

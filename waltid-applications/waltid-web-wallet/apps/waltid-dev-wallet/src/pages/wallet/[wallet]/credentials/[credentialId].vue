@@ -379,7 +379,7 @@
           View Credential Manifest
         </button>
       </div>
-      <button
+      <button v-if="isWalletAdmin"
         class="rounded bg-red-500 px-2 py-1 text-white shadow-sm hover:bg-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500"
         type="button"
         @click="deleteCredential"
@@ -453,6 +453,7 @@
 </template>
 
 <script lang="ts" setup>
+import {useIsWalletAdmin} from "@waltid-web-wallet/composables/accountWallet.ts";
 import VerifiableCredentialCard from "@waltid-web-wallet/components/credentials/VerifiableCredentialCard.vue";
 import {useCredential, type WalletCredential} from "@waltid-web-wallet/composables/credential.ts";
 import LoadingIndicator from "@waltid-web-wallet/components/loading/LoadingIndicator.vue";
@@ -462,6 +463,9 @@ import CenterMain from "@waltid-web-wallet/components/CenterMain.vue";
 import {JSONPath} from "jsonpath-plus";
 import QrcodeVue from "qrcode.vue";
 import {ref} from "vue";
+
+// Only admins of the wallet see the buttons that create, import or delete keys, DIDs and credentials
+const isWalletAdmin = await useIsWalletAdmin();
 
 const route = useRoute();
 const credentialId = route.params.credentialId as string;

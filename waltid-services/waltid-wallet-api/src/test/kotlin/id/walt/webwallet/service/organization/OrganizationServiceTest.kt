@@ -162,6 +162,10 @@ class OrganizationServiceTest {
         val mallory = person("mallory@example.com")
         val invite = OrganizationService.createInvite(admin, "carol@example.com")
         assertEquals(listOf("carol@example.com"), OrganizationService.invites(admin).map { it.email })
+        assertEquals(InviteInfo("deltaDAO", "carol@example.com", accountExists = true), OrganizationService.inviteInfo(invite.code))
+        val newcomerInvite = OrganizationService.createInvite(admin, "newcomer@example.com")
+        assertEquals(false, OrganizationService.inviteInfo(newcomerInvite.code).accountExists)
+        OrganizationService.revokeInvite(admin, newcomerInvite.code)
 
         assertFailsWith<ForbiddenException> { OrganizationService.acceptInvite(mallory, invite.code) }
         assertNull(OrganizationService.myOrganization(mallory).organization)
@@ -172,6 +176,7 @@ class OrganizationServiceTest {
 
         // Used once: cannot be used again, and members cannot be invited
         assertFailsWith<NotFoundException> { OrganizationService.acceptInvite(person("carol2@example.com"), invite.code) }
+        assertFailsWith<NotFoundException> { OrganizationService.inviteInfo(invite.code) }
         assertFailsWith<ConflictException> { OrganizationService.createInvite(admin, "carol@example.com") }
         assertFailsWith<ForbiddenException> { OrganizationService.createInvite(alice, "x@example.com") }
         assertFailsWith<IllegalArgumentException> { OrganizationService.createInvite(admin, "not-an-email") }

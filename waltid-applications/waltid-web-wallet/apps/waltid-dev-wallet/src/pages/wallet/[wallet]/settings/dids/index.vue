@@ -3,14 +3,14 @@
     <div class="mb-5 flex items-center justify-between border-b">
       <h1 class="py-3 text-2xl font-normal">DIDs</h1>
       <div class="flex gap-2">
-        <button
+        <button v-if="isWalletAdmin"
           class="inline-flex items-center rounded-lg bg-blue-500 px-9 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
           @click="createDid"
         >
           <!-- <KeyIcon aria-hidden="true" class="mr-1 h-5 w-5 text-white" /> -->
           <span>New</span>
         </button>
-        <button
+        <button v-if="isWalletAdmin"
             class="inline-flex items-center rounded-lg bg-blue-500 px-9 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
             @click="importDid"
         >
@@ -66,8 +66,12 @@
 </template>
 
 <script setup>
+import {useIsWalletAdmin} from "@waltid-web-wallet/composables/accountWallet.ts";
 import {useCurrentWallet} from "@waltid-web-wallet/composables/accountWallet.ts";
 import CenterMain from "@waltid-web-wallet/components/CenterMain.vue";
+
+// Only admins of the wallet see the buttons that create, import or delete keys, DIDs and credentials
+const isWalletAdmin = await useIsWalletAdmin();
 
 const dids = ref("");
 

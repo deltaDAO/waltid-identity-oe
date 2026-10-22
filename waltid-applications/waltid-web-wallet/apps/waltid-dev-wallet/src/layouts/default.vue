@@ -281,16 +281,6 @@
                     </NuxtLink>
                   </MenuItem>
                   <MenuItem v-slot="{ active }">
-                    <NuxtLink
-                      :class="[
-                        active ? 'bg-gray-100' : '',
-                        'block px-4 py-2 text-sm text-gray-700',
-                      ]"
-                      to="/settings"
-                      >Settings
-                    </NuxtLink>
-                  </MenuItem>
-                  <MenuItem v-slot="{ active }">
                     <button
                       :class="[
                         active ? 'bg-gray-100' : '',
