@@ -18,6 +18,13 @@ object Organizations : Table("organizations") {
 
     val createdOn = timestamp("created_on")
 
+    /** Account that created the organization; its role only changes with its own confirmation */
+    val createdBy = kotlinxUuid("created_by").nullable()
+
+    /** Change of the creator's role requested by another admin, waiting for the creator: USER or REMOVE */
+    val creatorChange = varchar("creator_change", 16).nullable()
+    val creatorChangeRequestedBy = kotlinxUuid("creator_change_requested_by").nullable()
+
     override val primaryKey = PrimaryKey(id)
 }
 
@@ -57,4 +64,20 @@ object OrganizationAddresses : Table("organization_addresses") {
     val addedOn = timestamp("added_on")
 
     override val primaryKey = PrimaryKey(address)
+}
+
+/** Personal, single-use invite: only the account with this email can use it, and joins without further approval */
+object OrganizationInvites : Table("organization_invites") {
+    val code = varchar("code", 64)
+    val organization = kotlinxUuid("organization_id").references(Organizations.id)
+
+    /** Lowercase email of the invited person */
+    val email = varchar("email", 128)
+    val createdBy = kotlinxUuid("created_by")
+    val createdOn = timestamp("created_on")
+    val expiresOn = timestamp("expires_on")
+    val usedBy = kotlinxUuid("used_by").nullable()
+    val usedOn = timestamp("used_on").nullable()
+
+    override val primaryKey = PrimaryKey(code)
 }

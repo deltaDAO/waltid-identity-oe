@@ -14,7 +14,9 @@ import io.ktor.server.plugins.*
 import kotlinx.serialization.Serializable
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.inList
+import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.core.lowerCase
 import org.jetbrains.exposed.v1.core.neq
 import org.jetbrains.exposed.v1.jdbc.*
@@ -22,6 +24,7 @@ import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import java.security.SecureRandom
 import java.util.UUID
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.days
 import kotlin.time.ExperimentalTime
 import kotlin.time.toJavaInstant
 import kotlin.uuid.ExperimentalUuidApi
@@ -35,12 +38,43 @@ data class OrganizationInfo(
     val name: String,
     val role: OrganizationRole,
     val status: OrganizationMembershipStatus,
-    /** Only for admins */
-    val inviteCode: String? = null,
+    /** The logged-in account created this organization */
+    val creator: Boolean = false,
+    /** Only for the creator: a change of their role that waits for their confirmation */
+    val pendingCreatorChange: PendingCreatorChange? = null,
 )
 
 @Serializable
-data class MyOrganization(val organization: OrganizationInfo?)
+data class PendingCreatorChange(
+    /** USER (make the creator a user) or REMOVE (remove the creator) */
+    val change: String,
+    val requestedBy: String?,
+)
+
+/** For super admins: an organization with its members */
+@Serializable
+data class OrganizationOverview(
+    val id: String,
+    val name: String,
+    val createdOn: String,
+    val members: List<OrganizationMember>,
+    val pendingCreatorChange: PendingCreatorChange? = null,
+)
+
+@Serializable
+data class OrganizationInvite(
+    val code: String,
+    val email: String,
+    val createdOn: String,
+    val expiresOn: String,
+)
+
+@Serializable
+data class MyOrganization(
+    val organization: OrganizationInfo?,
+    /** The logged-in account may see and manage every organization */
+    val superAdmin: Boolean = false,
+)
 
 @Serializable
 data class OrganizationMember(
@@ -49,6 +83,9 @@ data class OrganizationMember(
     val email: String?,
     val role: OrganizationRole,
     val status: OrganizationMembershipStatus,
+    val creator: Boolean = false,
+    /** On the creator: USER or REMOVE requested by another admin, waiting for confirmation */
+    val pendingChange: String? = null,
 )
 
 @Serializable
@@ -64,6 +101,9 @@ data class OrganizationAddress(
  * Organizations: admins manage members, the organization's EVM addresses (each with its own account and wallet)
  * and which members may use which address's wallet. Members get [AccountWalletPermissions.USE], admins
  * [AccountWalletPermissions.ADMINISTRATE] on all organization wallets.
+ *
+ * Super admins (emails in env `SUPER_ADMIN_EMAILS`) see every organization and can act as its admin by passing the
+ * organization id. The creator's role only changes with the creator's or a super admin's confirmation.
  */
 object OrganizationService {
 
@@ -72,14 +112,40 @@ object OrganizationService {
 
     enum class LinkResult { CREATED, ALREADY_LINKED }
 
+    /** Result of changing a member: done, or waiting for the creator's (or a super admin's) confirmation */
+    enum class ChangeResult { DONE, WAITING_FOR_CONFIRMATION }
+
+    private const val CHANGE_TO_USER = "USER"
+    private const val CHANGE_REMOVE = "REMOVE"
+
+    /**
+     * Super admins that are always super admins, whatever the configuration says. Built into the code, so they
+     * cannot be removed by changing the environment.
+     */
+    private val builtInSuperAdmins = setOf("alex@delta-dao.com")
+
+    /** Additional super admins (env `SUPER_ADMIN_EMAILS`, comma-separated); replaceable in tests */
+    var additionalSuperAdminEmails: () -> Set<String> = {
+        System.getenv("SUPER_ADMIN_EMAILS").orEmpty().split(",").map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
+    }
+
+    fun superAdminEmails(): Set<String> = builtInSuperAdmins + additionalSuperAdminEmails()
+
+    private fun emailOf(account: Uuid): String? = transaction {
+        Accounts.selectAll().where { Accounts.id eq account }.singleOrNull()?.get(Accounts.email)
+    }
+
+    fun isSuperAdmin(account: Uuid): Boolean = emailOf(account)?.lowercase()?.let { it in superAdminEmails() } ?: false
+
     /** Creates the wallet of an address account and returns its id (default: wallet with key and DID) */
     val defaultCreateWallet: suspend (account: Uuid, name: String) -> Uuid = { account, name ->
         AccountsService.initializeUserAccount(tenant = TENANT, name = name, registeredUserId = account)
         ownWalletOf(account) ?: error("Wallet was not created for $name")
     }
 
+    /** Random code for personal invites (and the legacy organization-wide code column) */
     private fun newInviteCode(): String =
-        ByteArray(12).also { secureRandom.nextBytes(it) }.joinToString("") { "%02x".format(it) }
+        ByteArray(16).also { secureRandom.nextBytes(it) }.joinToString("") { "%02x".format(it) }
 
     private fun now() = Clock.System.now().toJavaInstant()
 
@@ -117,6 +183,33 @@ object OrganizationService {
         return membership[OrganizationMembers.organization]
     }
 
+    /** The organization to manage: the caller's own (as admin), or any organization for a super admin */
+    private fun adminOrganization(caller: Uuid, organizationId: Uuid?): Uuid {
+        if (organizationId == null) return requireAdmin(caller)
+        if (!isSuperAdmin(caller)) throw ForbiddenException("Only super admins can manage other organizations.")
+        transaction {
+            Organizations.selectAll().where { Organizations.id eq organizationId }.singleOrNull()
+                ?: throw NotFoundException("Organization not found.")
+        }
+        return organizationId
+    }
+
+    /** The creator; for organizations from before this was stored, the longest-serving admin */
+    private fun creatorOf(organization: Uuid): Uuid? = transaction {
+        Organizations.selectAll().where { Organizations.id eq organization }.single()[Organizations.createdBy]
+            ?: OrganizationMembers.selectAll().where {
+                (OrganizationMembers.organization eq organization) and (OrganizationMembers.role eq OrganizationRole.ADMIN)
+            }.minByOrNull { it[OrganizationMembers.joinedOn] }?.get(OrganizationMembers.account)
+    }
+
+    private fun pendingCreatorChange(organization: Uuid): PendingCreatorChange? = transaction {
+        val row = Organizations.selectAll().where { Organizations.id eq organization }.single()
+        row[Organizations.creatorChange]?.let { change ->
+            val requester = row[Organizations.creatorChangeRequestedBy]
+            PendingCreatorChange(change, requester?.let { emailOf(it) ?: it.toString() })
+        }
+    }
+
     private fun requireMemberOf(organization: Uuid, member: Uuid) = transaction {
         OrganizationMembers.selectAll()
             .where { (OrganizationMembers.account eq member) and (OrganizationMembers.organization eq organization) }
@@ -132,19 +225,21 @@ object OrganizationService {
     }
 
     fun myOrganization(account: Uuid): MyOrganization = transaction {
-        val membership = membershipOf(account) ?: return@transaction MyOrganization(null)
-        val organization = Organizations.selectAll()
-            .where { Organizations.id eq membership[OrganizationMembers.organization] }.single()
-        val isAdmin = membership[OrganizationMembers.role] == OrganizationRole.ADMIN &&
-                membership[OrganizationMembers.status] == OrganizationMembershipStatus.ACTIVE
+        val superAdmin = isSuperAdmin(account)
+        val membership = membershipOf(account) ?: return@transaction MyOrganization(null, superAdmin)
+        val organizationId = membership[OrganizationMembers.organization]
+        val organization = Organizations.selectAll().where { Organizations.id eq organizationId }.single()
+        val isCreator = creatorOf(organizationId) == account
         MyOrganization(
             OrganizationInfo(
                 id = organization[Organizations.id].toString(),
                 name = organization[Organizations.name],
                 role = membership[OrganizationMembers.role],
                 status = membership[OrganizationMembers.status],
-                inviteCode = if (isAdmin) organization[Organizations.inviteCode] else null,
-            )
+                creator = isCreator,
+                pendingCreatorChange = if (isCreator) pendingCreatorChange(organizationId) else null,
+            ),
+            superAdmin,
         )
     }
 
@@ -164,6 +259,7 @@ object OrganizationService {
                 it[Organizations.name] = trimmed
                 it[inviteCode] = newInviteCode()
                 it[createdOn] = now()
+                it[createdBy] = account
             }
             OrganizationMembers.insert {
                 it[OrganizationMembers.organization] = organization
@@ -180,12 +276,94 @@ object OrganizationService {
         Organizations.selectAll().where { Organizations.name.lowerCase() eq name.trim().lowercase() }.singleOrNull()
     }
 
-    /** Request to join with the invite code: the membership waits for an admin's approval */
-    fun joinOrganization(account: Uuid, inviteCode: String): MyOrganization {
-        val organization = transaction {
-            Organizations.selectAll().where { Organizations.inviteCode eq inviteCode.trim() }.singleOrNull()
-        } ?: throw NotFoundException("No organization found for this invite code.")
-        return requestMembership(account, organization[Organizations.id])
+    // --- Personal invites ---
+
+    private val INVITE_VALIDITY = 14.days
+    private val emailRegex = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
+
+    private fun inviteRow(row: ResultRow) = OrganizationInvite(
+        code = row[OrganizationInvites.code],
+        email = row[OrganizationInvites.email],
+        createdOn = row[OrganizationInvites.createdOn].toString(),
+        expiresOn = row[OrganizationInvites.expiresOn].toString(),
+    )
+
+    /** Creates a single-use invite for one email address (replaces an open invite for the same address) */
+    fun createInvite(admin: Uuid, email: String, organizationId: Uuid? = null): OrganizationInvite {
+        val organization = adminOrganization(admin, organizationId)
+        val normalized = email.trim().lowercase()
+        require(emailRegex.matches(normalized)) { "Please enter a valid email address." }
+
+        return transaction {
+            val alreadyMember = OrganizationMembers.selectAll().where { OrganizationMembers.organization eq organization }
+                .any { member ->
+                    Accounts.selectAll().where { Accounts.id eq member[OrganizationMembers.account] }.singleOrNull()
+                        ?.get(Accounts.email)?.lowercase() == normalized
+                }
+            if (alreadyMember) throw ConflictException("$normalized is already a member of your organization.")
+
+            OrganizationInvites.deleteWhere {
+                (OrganizationInvites.organization eq organization) and (OrganizationInvites.email eq normalized) and
+                        (usedBy.isNull())
+            }
+            val code = newInviteCode()
+            val created = Clock.System.now()
+            OrganizationInvites.insert {
+                it[OrganizationInvites.code] = code
+                it[OrganizationInvites.organization] = organization
+                it[OrganizationInvites.email] = normalized
+                it[createdBy] = admin
+                it[createdOn] = created.toJavaInstant()
+                it[expiresOn] = (created + INVITE_VALIDITY).toJavaInstant()
+            }
+            inviteRow(OrganizationInvites.selectAll().where { OrganizationInvites.code eq code }.single())
+        }
+    }
+
+    /** Open invites (not used, not expired) */
+    fun invites(admin: Uuid, organizationId: Uuid? = null): List<OrganizationInvite> {
+        val organization = adminOrganization(admin, organizationId)
+        return transaction {
+            OrganizationInvites.selectAll().where {
+                (OrganizationInvites.organization eq organization) and (OrganizationInvites.usedBy.isNull())
+            }.filter { it[OrganizationInvites.expiresOn] > now() }.map { inviteRow(it) }
+        }
+    }
+
+    fun revokeInvite(admin: Uuid, code: String, organizationId: Uuid? = null) {
+        val organization = adminOrganization(admin, organizationId)
+        transaction {
+            OrganizationInvites.deleteWhere {
+                (OrganizationInvites.code eq code) and (OrganizationInvites.organization eq organization) and (usedBy.isNull())
+            }
+        }
+    }
+
+    /** Joins with a personal invite: only the invited email can use it, once; the invite is the admin's approval */
+    fun acceptInvite(account: Uuid, code: String): MyOrganization {
+        transaction {
+            val invite = OrganizationInvites.selectAll().where { OrganizationInvites.code eq code.trim() }.singleOrNull()
+            if (invite == null || invite[OrganizationInvites.usedBy] != null || invite[OrganizationInvites.expiresOn] <= now())
+                throw NotFoundException("This invite is not valid anymore (used, expired or revoked). Ask your admin for a new one.")
+
+            val accountEmail = Accounts.selectAll().where { Accounts.id eq account }.singleOrNull()?.get(Accounts.email)?.lowercase()
+            if (accountEmail != invite[OrganizationInvites.email])
+                throw ForbiddenException("This invite is for a different email address. Log in with the invited email address.")
+            if (membershipOf(account) != null) throw ConflictException("You already belong to an organization.")
+
+            OrganizationMembers.insert {
+                it[OrganizationMembers.organization] = invite[OrganizationInvites.organization]
+                it[OrganizationMembers.account] = account
+                it[role] = OrganizationRole.USER
+                it[status] = OrganizationMembershipStatus.ACTIVE
+                it[joinedOn] = now()
+            }
+            OrganizationInvites.update({ OrganizationInvites.code eq invite[OrganizationInvites.code] }) {
+                it[usedBy] = account
+                it[usedOn] = now()
+            }
+        }
+        return myOrganization(account)
     }
 
     /** Request to join by the organization's exact name (no listing or search, so names are not exposed) */
@@ -210,32 +388,48 @@ object OrganizationService {
         return myOrganization(account)
     }
 
-    fun regenerateInviteCode(admin: Uuid): MyOrganization {
-        val organization = requireAdmin(admin)
-        transaction {
-            Organizations.update({ Organizations.id eq organization }) { it[inviteCode] = newInviteCode() }
+
+
+    fun members(admin: Uuid, organizationId: Uuid? = null): List<OrganizationMember> =
+        membersOf(adminOrganization(admin, organizationId))
+
+    private fun membersOf(organization: Uuid): List<OrganizationMember> = transaction {
+        val creator = creatorOf(organization)
+        val pending = pendingCreatorChange(organization)
+        OrganizationMembers.selectAll().where { OrganizationMembers.organization eq organization }.map { row ->
+            val accountId = row[OrganizationMembers.account]
+            val account = Accounts.selectAll().where { Accounts.id eq accountId }.singleOrNull()
+            OrganizationMember(
+                accountId = accountId.toString(),
+                name = account?.get(Accounts.name),
+                email = account?.get(Accounts.email),
+                role = row[OrganizationMembers.role],
+                status = row[OrganizationMembers.status],
+                creator = accountId == creator,
+                pendingChange = if (accountId == creator) pending?.change else null,
+            )
         }
-        return myOrganization(admin)
     }
 
-    fun members(admin: Uuid): List<OrganizationMember> {
-        val organization = requireAdmin(admin)
+    /** Super admins: every organization with its members */
+    fun allOrganizations(superAdmin: Uuid): List<OrganizationOverview> {
+        if (!isSuperAdmin(superAdmin)) throw ForbiddenException("Only super admins can see all organizations.")
         return transaction {
-            OrganizationMembers.selectAll().where { OrganizationMembers.organization eq organization }.map { row ->
-                val account = Accounts.selectAll().where { Accounts.id eq row[OrganizationMembers.account] }.singleOrNull()
-                OrganizationMember(
-                    accountId = row[OrganizationMembers.account].toString(),
-                    name = account?.get(Accounts.name),
-                    email = account?.get(Accounts.email),
-                    role = row[OrganizationMembers.role],
-                    status = row[OrganizationMembers.status],
+            Organizations.selectAll().orderBy(Organizations.name).map { row ->
+                val organization = row[Organizations.id]
+                OrganizationOverview(
+                    id = organization.toString(),
+                    name = row[Organizations.name],
+                    createdOn = row[Organizations.createdOn].toString(),
+                    members = membersOf(organization),
+                    pendingCreatorChange = pendingCreatorChange(organization),
                 )
             }
         }
     }
 
-    fun approveMember(admin: Uuid, member: Uuid) {
-        val organization = requireAdmin(admin)
+    fun approveMember(admin: Uuid, member: Uuid, organizationId: Uuid? = null) {
+        val organization = adminOrganization(admin, organizationId)
         transaction {
             requireMemberOf(organization, member)
             OrganizationMembers.update({ OrganizationMembers.account eq member }) {
@@ -244,8 +438,74 @@ object OrganizationService {
         }
     }
 
-    fun setRole(admin: Uuid, member: Uuid, role: OrganizationRole) {
-        val organization = requireAdmin(admin)
+    /**
+     * Changes a member's role. Making the creator a user only happens with the creator's or a super admin's
+     * confirmation: requested by another admin, it waits ([ChangeResult.WAITING_FOR_CONFIRMATION]).
+     */
+    fun setRole(admin: Uuid, member: Uuid, role: OrganizationRole, organizationId: Uuid? = null): ChangeResult {
+        val organization = adminOrganization(admin, organizationId)
+        if (role == OrganizationRole.USER) requireNotProtectedSuperAdmin(admin, member)
+        if (role == OrganizationRole.USER && needsCreatorConfirmation(admin, organization, member)) {
+            requestCreatorChange(admin, organization, member, CHANGE_TO_USER)
+            return ChangeResult.WAITING_FOR_CONFIRMATION
+        }
+        applyRole(organization, member, role)
+        return ChangeResult.DONE
+    }
+
+    /** Super admins are protected: nobody but themselves can make them a user or remove them */
+    private fun requireNotProtectedSuperAdmin(caller: Uuid, member: Uuid) {
+        if (caller != member && isSuperAdmin(member))
+            throw ForbiddenException("This member is a super admin and can only be changed by themselves.")
+    }
+
+    private fun needsCreatorConfirmation(caller: Uuid, organization: Uuid, member: Uuid) =
+        member == creatorOf(organization) && caller != member && !isSuperAdmin(caller)
+
+    private fun requestCreatorChange(caller: Uuid, organization: Uuid, member: Uuid, change: String) = transaction {
+        requireMemberOf(organization, member)
+        Organizations.update({ Organizations.id eq organization }) {
+            it[creatorChange] = change
+            it[creatorChangeRequestedBy] = caller
+        }
+    }
+
+    private fun clearCreatorChange(organization: Uuid) = transaction {
+        Organizations.update({ Organizations.id eq organization }) {
+            it[creatorChange] = null
+            it[creatorChangeRequestedBy] = null
+        }
+    }
+
+    /** The organization whose pending creator change the caller may decide: the creator's own, or any for super admins */
+    private fun creatorChangeOrganization(caller: Uuid, organizationId: Uuid?): Uuid {
+        val organization = organizationId?.also {
+            if (!isSuperAdmin(caller)) throw ForbiddenException("Only super admins can decide for other organizations.")
+        } ?: membershipOf(caller)?.get(OrganizationMembers.organization)
+        ?: throw NotFoundException("You do not belong to an organization.")
+        if (organizationId == null && creatorOf(organization) != caller && !isSuperAdmin(caller))
+            throw ForbiddenException("Only the creator of the organization or a super admin can decide this.")
+        return organization
+    }
+
+    /** The creator (or a super admin) confirms the requested change of the creator's role */
+    fun confirmCreatorChange(caller: Uuid, organizationId: Uuid? = null) {
+        val organization = creatorChangeOrganization(caller, organizationId)
+        val change = pendingCreatorChange(organization)?.change ?: throw NotFoundException("There is no change to confirm.")
+        val creator = creatorOf(organization) ?: throw NotFoundException("The organization has no creator.")
+        when (change) {
+            CHANGE_TO_USER -> applyRole(organization, creator, OrganizationRole.USER)
+            CHANGE_REMOVE -> applyRemove(organization, creator)
+        }
+        clearCreatorChange(organization)
+    }
+
+    fun declineCreatorChange(caller: Uuid, organizationId: Uuid? = null) {
+        val organization = creatorChangeOrganization(caller, organizationId)
+        clearCreatorChange(organization)
+    }
+
+    private fun applyRole(organization: Uuid, member: Uuid, role: OrganizationRole) {
         transaction {
             val membership = requireMemberOf(organization, member)
             if (membership[OrganizationMembers.status] != OrganizationMembershipStatus.ACTIVE)
@@ -267,8 +527,19 @@ object OrganizationService {
         }
     }
 
-    fun removeMember(admin: Uuid, member: Uuid) {
-        val organization = requireAdmin(admin)
+    /** Removes a member; removing the creator needs the creator's or a super admin's confirmation */
+    fun removeMember(admin: Uuid, member: Uuid, organizationId: Uuid? = null): ChangeResult {
+        val organization = adminOrganization(admin, organizationId)
+        requireNotProtectedSuperAdmin(admin, member)
+        if (needsCreatorConfirmation(admin, organization, member)) {
+            requestCreatorChange(admin, organization, member, CHANGE_REMOVE)
+            return ChangeResult.WAITING_FOR_CONFIRMATION
+        }
+        applyRemove(organization, member)
+        return ChangeResult.DONE
+    }
+
+    private fun applyRemove(organization: Uuid, member: Uuid) {
         transaction {
             requireMemberOf(organization, member)
             if (activeAdmins(organization) == listOf(member))
@@ -315,8 +586,8 @@ object OrganizationService {
         }.singleOrNull() ?: throw NotFoundException("This address does not belong to your organization.")
     }
 
-    fun addresses(admin: Uuid): List<OrganizationAddress> {
-        val organization = requireAdmin(admin)
+    fun addresses(admin: Uuid, organizationId: Uuid? = null): List<OrganizationAddress> {
+        val organization = adminOrganization(admin, organizationId)
         return transaction {
             val admins = activeAdmins(organization).toSet()
             OrganizationAddresses.selectAll().where { OrganizationAddresses.organization eq organization }.map { row ->
@@ -342,21 +613,23 @@ object OrganizationService {
     suspend fun linkAddress(
         admin: Uuid,
         request: Web3.SiweRequest,
+        organizationId: Uuid? = null,
         createWallet: suspend (Uuid, String) -> Uuid = defaultCreateWallet,
     ): Pair<String, LinkResult> {
-        requireAdmin(admin)
+        adminOrganization(admin, organizationId)
         val address = runCatching { Web3.verifySiweLogin(request) }.getOrElse { ex ->
             throw IllegalArgumentException("Could not verify that you control this address: ${ex.message}", ex)
         }
-        return address to linkVerifiedAddress(admin, address, createWallet)
+        return address to linkVerifiedAddress(admin, address, createWallet, organizationId)
     }
 
     suspend fun linkVerifiedAddress(
         admin: Uuid,
         address: String,
         createWallet: suspend (Uuid, String) -> Uuid = defaultCreateWallet,
+        organizationId: Uuid? = null,
     ): LinkResult {
-        val organization = requireAdmin(admin)
+        val organization = adminOrganization(admin, organizationId)
         val identifier = Web3Identifier(address.lowercase()).toDataString()
 
         val existing = transaction {
@@ -425,8 +698,8 @@ object OrganizationService {
     }
 
     /** Removes the address from the organization; the address keeps its account and wallet for market login */
-    fun unlinkAddress(admin: Uuid, address: String) {
-        val organization = requireAdmin(admin)
+    fun unlinkAddress(admin: Uuid, address: String, organizationId: Uuid? = null) {
+        val organization = adminOrganization(admin, organizationId)
         transaction {
             val row = addressRow(organization, address)
             val wallet = row[OrganizationAddresses.wallet].value
@@ -439,8 +712,8 @@ object OrganizationService {
         }
     }
 
-    fun grantAccess(admin: Uuid, address: String, member: Uuid) {
-        val organization = requireAdmin(admin)
+    fun grantAccess(admin: Uuid, address: String, member: Uuid, organizationId: Uuid? = null) {
+        val organization = adminOrganization(admin, organizationId)
         transaction {
             val wallet = addressRow(organization, address)[OrganizationAddresses.wallet].value
             val membership = requireMemberOf(organization, member)
@@ -452,8 +725,8 @@ object OrganizationService {
         }
     }
 
-    fun revokeAccess(admin: Uuid, address: String, member: Uuid) {
-        val organization = requireAdmin(admin)
+    fun revokeAccess(admin: Uuid, address: String, member: Uuid, organizationId: Uuid? = null) {
+        val organization = adminOrganization(admin, organizationId)
         transaction {
             val wallet = addressRow(organization, address)[OrganizationAddresses.wallet].value
             val membership = requireMemberOf(organization, member)

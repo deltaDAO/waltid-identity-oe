@@ -27,9 +27,12 @@ import kotlin.uuid.Uuid
 @Serializable
 data class CreateOrganizationRequest(val name: String)
 
-/** Either the invite code or the exact organization name */
+/** Either a personal invite code or the exact organization name (the latter needs an admin's approval) */
 @Serializable
 data class JoinOrganizationRequest(val inviteCode: String? = null, val name: String? = null)
+
+@Serializable
+data class CreateInviteRequest(val email: String)
 
 @Serializable
 data class SetRoleRequest(val role: OrganizationRole)
@@ -39,6 +42,20 @@ data class AddedAddress(val address: String)
 
 private suspend fun ApplicationCall.accountUuid(): Uuid = Uuid.parse(getAuthenticatedAccount())
 private fun ApplicationCall.memberParam(): Uuid = Uuid.parse(parameters.getOrFail("accountId"))
+
+/** Super admins manage another organization with `?organizationId=...`; everyone else their own */
+private fun ApplicationCall.organizationParam(): Uuid? = request.queryParameters["organizationId"]?.let { Uuid.parse(it) }
+
+@Serializable
+data class ChangeResponse(val status: OrganizationService.ChangeResult, val message: String)
+
+private suspend fun ApplicationCall.respondChange(result: OrganizationService.ChangeResult) = when (result) {
+    OrganizationService.ChangeResult.DONE -> respond(HttpStatusCode.NoContent)
+    OrganizationService.ChangeResult.WAITING_FOR_CONFIRMATION -> respond(
+        HttpStatusCode.Accepted,
+        ChangeResponse(result, "This changes the organization's creator, so the creator or a super admin has to confirm it first.")
+    )
+}
 
 fun Application.organizationRoutes() {
     routing {
@@ -63,22 +80,57 @@ fun Application.organizationRoutes() {
                 }
 
                 post("join", {
-                    summary = "Request to join an organization by invite code or exact name (an admin approves)"
+                    summary = "Join with a personal invite code (joins directly), or ask to join by exact name (an admin approves)"
                     request { body<JoinOrganizationRequest>() }
                     response { HttpStatusCode.OK to { body<MyOrganization>() } }
                 }) {
                     val req = call.receive<JoinOrganizationRequest>()
                     val account = call.accountUuid()
                     val result = when {
-                        !req.inviteCode.isNullOrBlank() -> OrganizationService.joinOrganization(account, req.inviteCode)
+                        !req.inviteCode.isNullOrBlank() -> OrganizationService.acceptInvite(account, req.inviteCode)
                         !req.name.isNullOrBlank() -> OrganizationService.joinOrganizationByName(account, req.name)
                         else -> throw IllegalArgumentException("Please enter an invite code or the organization's name.")
                     }
                     call.respond(result)
                 }
 
-                post("invite-code", { summary = "Create a new invite code (the old one stops working)" }) {
-                    call.respond(OrganizationService.regenerateInviteCode(call.accountUuid()))
+                get("all", {
+                    summary = "All organizations with their members (super admins only)"
+                    response { HttpStatusCode.OK to { body<List<OrganizationOverview>>() } }
+                }) {
+                    call.respond(OrganizationService.allOrganizations(call.accountUuid()))
+                }
+
+                route("creator-change") {
+                    post("confirm", { summary = "Confirm the requested change of the creator's role (creator or super admin)" }) {
+                        OrganizationService.confirmCreatorChange(call.accountUuid(), call.organizationParam())
+                        call.respond(HttpStatusCode.NoContent)
+                    }
+                    post("decline", { summary = "Decline the requested change of the creator's role (creator or super admin)" }) {
+                        OrganizationService.declineCreatorChange(call.accountUuid(), call.organizationParam())
+                        call.respond(HttpStatusCode.NoContent)
+                    }
+                }
+
+                route("invites") {
+                    get({
+                        summary = "Open personal invites (admins only)"
+                        response { HttpStatusCode.OK to { body<List<OrganizationInvite>>() } }
+                    }) {
+                        call.respond(OrganizationService.invites(call.accountUuid(), call.organizationParam()))
+                    }
+                    post({
+                        summary = "Invite one email address (single use, valid 14 days)"
+                        request { body<CreateInviteRequest>() }
+                        response { HttpStatusCode.Created to { body<OrganizationInvite>() } }
+                    }) {
+                        val req = call.receive<CreateInviteRequest>()
+                        call.respond(HttpStatusCode.Created, OrganizationService.createInvite(call.accountUuid(), req.email, call.organizationParam()))
+                    }
+                    delete("{code}", { summary = "Revoke an open invite" }) {
+                        OrganizationService.revokeInvite(call.accountUuid(), call.parameters.getOrFail("code"), call.organizationParam())
+                        call.respond(HttpStatusCode.NoContent)
+                    }
                 }
 
                 route("members") {
@@ -86,10 +138,10 @@ fun Application.organizationRoutes() {
                         summary = "Members of the organization (admins only)"
                         response { HttpStatusCode.OK to { body<List<OrganizationMember>>() } }
                     }) {
-                        call.respond(OrganizationService.members(call.accountUuid()))
+                        call.respond(OrganizationService.members(call.accountUuid(), call.organizationParam()))
                     }
                     post("{accountId}/approve", { summary = "Approve a join request" }) {
-                        OrganizationService.approveMember(call.accountUuid(), call.memberParam())
+                        OrganizationService.approveMember(call.accountUuid(), call.memberParam(), call.organizationParam())
                         call.respond(HttpStatusCode.NoContent)
                     }
                     put("{accountId}/role", {
@@ -97,12 +149,14 @@ fun Application.organizationRoutes() {
                         request { body<SetRoleRequest>() }
                     }) {
                         val req = call.receive<SetRoleRequest>()
-                        OrganizationService.setRole(call.accountUuid(), call.memberParam(), req.role)
-                        call.respond(HttpStatusCode.NoContent)
+                        call.respondChange(
+                            OrganizationService.setRole(call.accountUuid(), call.memberParam(), req.role, call.organizationParam())
+                        )
                     }
                     delete("{accountId}", { summary = "Remove a member (or decline a join request)" }) {
-                        OrganizationService.removeMember(call.accountUuid(), call.memberParam())
-                        call.respond(HttpStatusCode.NoContent)
+                        call.respondChange(
+                            OrganizationService.removeMember(call.accountUuid(), call.memberParam(), call.organizationParam())
+                        )
                     }
                 }
 
@@ -111,7 +165,7 @@ fun Application.organizationRoutes() {
                         summary = "Addresses of the organization and who may use their wallets (admins only)"
                         response { HttpStatusCode.OK to { body<List<OrganizationAddress>>() } }
                     }) {
-                        call.respond(OrganizationService.addresses(call.accountUuid()))
+                        call.respond(OrganizationService.addresses(call.accountUuid(), call.organizationParam()))
                     }
                     post({
                         summary = "Add an address to the organization (proves control with a signed nonce)"
@@ -124,23 +178,23 @@ fun Application.organizationRoutes() {
                         }
                     }) {
                         val req = call.receive<Web3.SiweRequest>()
-                        val (address, result) = OrganizationService.linkAddress(call.accountUuid(), req)
+                        val (address, result) = OrganizationService.linkAddress(call.accountUuid(), req, call.organizationParam())
                         val status = if (result == LinkResult.CREATED) HttpStatusCode.Created else HttpStatusCode.OK
                         call.respond(status, AddedAddress(address))
                     }
                     delete("{address}", { summary = "Remove an address from the organization" }) {
-                        OrganizationService.unlinkAddress(call.accountUuid(), call.parameters.getOrFail("address"))
+                        OrganizationService.unlinkAddress(call.accountUuid(), call.parameters.getOrFail("address"), call.organizationParam())
                         call.respond(HttpStatusCode.NoContent)
                     }
                     put("{address}/access/{accountId}", { summary = "Let a member use the wallet of this address" }) {
                         OrganizationService.grantAccess(
-                            call.accountUuid(), call.parameters.getOrFail("address"), call.memberParam()
+                            call.accountUuid(), call.parameters.getOrFail("address"), call.memberParam(), call.organizationParam()
                         )
                         call.respond(HttpStatusCode.NoContent)
                     }
                     delete("{address}/access/{accountId}", { summary = "Stop a member from using the wallet of this address" }) {
                         OrganizationService.revokeAccess(
-                            call.accountUuid(), call.parameters.getOrFail("address"), call.memberParam()
+                            call.accountUuid(), call.parameters.getOrFail("address"), call.memberParam(), call.organizationParam()
                         )
                         call.respond(HttpStatusCode.NoContent)
                     }

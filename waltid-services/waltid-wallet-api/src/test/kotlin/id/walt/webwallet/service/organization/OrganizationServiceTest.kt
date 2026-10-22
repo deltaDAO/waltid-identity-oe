@@ -19,6 +19,7 @@ import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.TransactionManager
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import org.jetbrains.exposed.v1.jdbc.update
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
@@ -47,12 +48,13 @@ class OrganizationServiceTest {
         Accounts, Wallets, WalletKeys, WalletDids, WalletCredentials, WalletCategory, WalletCredentialCategoryMap,
         WalletIssuers, WalletOperationHistories, WalletSettings, WalletNotifications, Events, AccountWalletMappings,
         AuthnzUsers, AuthnzAccountIdentifiers, AuthnzStoredData,
-        Organizations, OrganizationMembers, OrganizationAddresses,
+        Organizations, OrganizationMembers, OrganizationAddresses, OrganizationInvites,
     )
 
     private lateinit var admin: Uuid
     private lateinit var alice: Uuid
     private lateinit var bob: Uuid
+    private lateinit var superAdmin: Uuid
 
     @BeforeAll
     fun setUpDatabase() {
@@ -69,6 +71,8 @@ class OrganizationServiceTest {
         admin = person("admin@example.com")
         alice = person("alice@example.com")
         bob = person("bob@example.com")
+        superAdmin = person("root@example.com")
+        OrganizationService.additionalSuperAdminEmails = { setOf("root@example.com") }
     }
 
     @AfterAll
@@ -119,11 +123,11 @@ class OrganizationServiceTest {
 
     private fun address(n: Int) = "0x" + n.toString(16).padStart(40, '0')
 
-    /** Admin with an organization, alice approved as user, bob pending */
+    /** Admin with an organization, alice joined with a personal invite, bob asked to join by name (pending) */
     private fun organizationWithMembers(): String {
         val org = OrganizationService.createOrganization(admin, "deltaDAO").organization!!
-        OrganizationService.joinOrganization(alice, org.inviteCode!!)
-        OrganizationService.approveMember(admin, alice)
+        val invite = OrganizationService.createInvite(admin, "Alice@Example.com")
+        OrganizationService.acceptInvite(alice, invite.code)
         OrganizationService.joinOrganizationByName(bob, "DELTADAO")
         return org.id
     }
@@ -135,23 +139,61 @@ class OrganizationServiceTest {
         assertEquals("deltaDAO", org.name)
         assertEquals(OrganizationRole.ADMIN, org.role)
         assertEquals(OrganizationMembershipStatus.ACTIVE, org.status)
-        assertNotNull(org.inviteCode)
 
         assertFailsWith<ConflictException> { OrganizationService.createOrganization(admin, "Other") }
         assertFailsWith<ConflictException> { OrganizationService.createOrganization(alice, "DELTADAO") }
     }
 
     @Test
-    fun `joining by invite code or name waits for approval`() {
+    fun `asking to join by name waits for approval`() {
         organizationWithMembers()
 
-        val bobsView = OrganizationService.myOrganization(bob).organization!!
-        assertEquals(OrganizationMembershipStatus.PENDING, bobsView.status)
-        assertNull(bobsView.inviteCode, "Only admins see the invite code")
-
+        assertEquals(OrganizationMembershipStatus.PENDING, OrganizationService.myOrganization(bob).organization!!.status)
         assertFailsWith<NotFoundException> { OrganizationService.joinOrganizationByName(person("c@example.com"), "unknown") }
-        assertFailsWith<NotFoundException> { OrganizationService.joinOrganization(person("d@example.com"), "wrong-code") }
         assertFailsWith<ConflictException> { OrganizationService.joinOrganizationByName(alice, "deltaDAO") }
+    }
+
+    @Test
+    fun `a personal invite works once and only for the invited email`() {
+        organizationWithMembers()
+        assertEquals(OrganizationMembershipStatus.ACTIVE, OrganizationService.myOrganization(alice).organization!!.status)
+
+        val carol = person("carol@example.com")
+        val mallory = person("mallory@example.com")
+        val invite = OrganizationService.createInvite(admin, "carol@example.com")
+        assertEquals(listOf("carol@example.com"), OrganizationService.invites(admin).map { it.email })
+
+        assertFailsWith<ForbiddenException> { OrganizationService.acceptInvite(mallory, invite.code) }
+        assertNull(OrganizationService.myOrganization(mallory).organization)
+
+        OrganizationService.acceptInvite(carol, invite.code)
+        assertEquals(OrganizationMembershipStatus.ACTIVE, OrganizationService.myOrganization(carol).organization!!.status)
+        assertTrue(OrganizationService.invites(admin).isEmpty(), "Used invites are no longer open")
+
+        // Used once: cannot be used again, and members cannot be invited
+        assertFailsWith<NotFoundException> { OrganizationService.acceptInvite(person("carol2@example.com"), invite.code) }
+        assertFailsWith<ConflictException> { OrganizationService.createInvite(admin, "carol@example.com") }
+        assertFailsWith<ForbiddenException> { OrganizationService.createInvite(alice, "x@example.com") }
+        assertFailsWith<IllegalArgumentException> { OrganizationService.createInvite(admin, "not-an-email") }
+    }
+
+    @Test
+    fun `revoked or expired invites cannot be used`() {
+        organizationWithMembers()
+        val dave = person("dave@example.com")
+
+        val revoked = OrganizationService.createInvite(admin, "dave@example.com")
+        OrganizationService.revokeInvite(admin, revoked.code)
+        assertFailsWith<NotFoundException> { OrganizationService.acceptInvite(dave, revoked.code) }
+
+        val expired = OrganizationService.createInvite(admin, "dave@example.com")
+        transaction(database) {
+            OrganizationInvites.update({ OrganizationInvites.code eq expired.code }) {
+                it[expiresOn] = java.time.Instant.now().minusSeconds(60)
+            }
+        }
+        assertFailsWith<NotFoundException> { OrganizationService.acceptInvite(dave, expired.code) }
+        assertNull(OrganizationService.myOrganization(dave).organization)
     }
 
     @Test
@@ -326,5 +368,88 @@ class OrganizationServiceTest {
                 .where { AuthnzAccountIdentifiers.userId eq alice.toJavaUuid() }.map { it[AuthnzAccountIdentifiers.identifier] }
             assertEquals(listOf("alice@example.com"), logins)
         }
+    }
+
+    @Test
+    fun `another admin can only request to make the creator a user, the creator confirms`() {
+        organizationWithMembers()
+        OrganizationService.setRole(admin, alice, OrganizationRole.ADMIN)
+
+        assertEquals(OrganizationService.ChangeResult.WAITING_FOR_CONFIRMATION,
+            OrganizationService.setRole(alice, admin, OrganizationRole.USER))
+        val creatorView = OrganizationService.myOrganization(admin).organization!!
+        assertEquals(OrganizationRole.ADMIN, creatorView.role, "Nothing changes before the confirmation")
+        assertTrue(creatorView.creator)
+        assertEquals("USER", creatorView.pendingCreatorChange?.change)
+        assertEquals("alice@example.com", creatorView.pendingCreatorChange?.requestedBy)
+        assertFailsWith<ForbiddenException> { OrganizationService.confirmCreatorChange(alice) }
+
+        OrganizationService.confirmCreatorChange(admin)
+        val after = OrganizationService.myOrganization(admin).organization!!
+        assertEquals(OrganizationRole.USER, after.role)
+        assertNull(after.pendingCreatorChange)
+    }
+
+    @Test
+    fun `the creator can decline, a super admin can confirm the removal`() {
+        organizationWithMembers()
+        OrganizationService.setRole(admin, alice, OrganizationRole.ADMIN)
+
+        OrganizationService.setRole(alice, admin, OrganizationRole.USER)
+        OrganizationService.declineCreatorChange(admin)
+        assertEquals(OrganizationRole.ADMIN, OrganizationService.myOrganization(admin).organization!!.role)
+        assertNull(OrganizationService.myOrganization(admin).organization!!.pendingCreatorChange)
+
+        assertEquals(OrganizationService.ChangeResult.WAITING_FOR_CONFIRMATION, OrganizationService.removeMember(alice, admin))
+        val organizationId = Uuid.parse(OrganizationService.myOrganization(alice).organization!!.id)
+        assertEquals("REMOVE", OrganizationService.members(alice).single { it.creator }.pendingChange)
+
+        OrganizationService.confirmCreatorChange(superAdmin, organizationId)
+        assertNull(OrganizationService.myOrganization(admin).organization)
+    }
+
+    @Test
+    fun `super admins see every organization and manage it directly`() {
+        organizationWithMembers()
+        val organizationId = Uuid.parse(OrganizationService.myOrganization(admin).organization!!.id)
+
+        assertTrue(OrganizationService.myOrganization(superAdmin).superAdmin)
+        assertTrue(!OrganizationService.myOrganization(admin).superAdmin)
+        assertEquals(listOf("deltaDAO"), OrganizationService.allOrganizations(superAdmin).map { it.name })
+        assertFailsWith<ForbiddenException> { OrganizationService.allOrganizations(admin) }
+        assertFailsWith<ForbiddenException> { OrganizationService.members(admin, organizationId) }
+
+        // Acting as admin of that organization, without being a member
+        assertEquals(3, OrganizationService.members(superAdmin, organizationId).size)
+        OrganizationService.approveMember(superAdmin, bob, organizationId)
+        OrganizationService.setRole(superAdmin, alice, OrganizationRole.ADMIN, organizationId)
+        // A super admin changes the creator directly
+        assertEquals(OrganizationService.ChangeResult.DONE,
+            OrganizationService.setRole(superAdmin, admin, OrganizationRole.USER, organizationId))
+        assertEquals(OrganizationRole.USER, OrganizationService.myOrganization(admin).organization!!.role)
+    }
+
+    @Test
+    fun `the built-in super admin cannot be configured away`() {
+        OrganizationService.additionalSuperAdminEmails = { emptySet() }
+        val alex = person("Alex@Delta-DAO.com")
+        assertTrue(OrganizationService.isSuperAdmin(alex))
+        assertTrue(!OrganizationService.isSuperAdmin(superAdmin), "Configured super admins can be removed")
+    }
+
+    @Test
+    fun `super admins in an organization cannot be demoted or removed by others`() {
+        organizationWithMembers()
+        val root = superAdmin
+        val invite = OrganizationService.createInvite(admin, "root@example.com")
+        OrganizationService.acceptInvite(root, invite.code)
+
+        assertFailsWith<ForbiddenException> { OrganizationService.removeMember(admin, root) }
+        OrganizationService.setRole(admin, root, OrganizationRole.ADMIN)
+        assertFailsWith<ForbiddenException> { OrganizationService.setRole(admin, root, OrganizationRole.USER) }
+
+        // Only themselves
+        OrganizationService.setRole(root, root, OrganizationRole.USER)
+        assertEquals(OrganizationRole.USER, OrganizationService.myOrganization(root).organization!!.role)
     }
 }

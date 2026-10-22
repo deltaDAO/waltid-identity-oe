@@ -13,10 +13,13 @@ when you buy or access an asset in the Enterprise market.
 
 Wallets belong to organizations, not to single users.
 
-- Whoever creates an organization becomes its **admin**. Admins accept or remove members and can make other
-  members admins.
-- To **join**, open the invite link from an admin, or enter the invite code or the exact name of the
-  organization under **Organization**. An admin has to accept your request.
+- Whoever creates an organization becomes its **admin** and its **creator**. Admins invite, accept or remove
+  members and can make other members admins.
+- **Invites** are personal: an admin creates an invite for one email address and sends you the link. It works
+  once, for 14 days, and only when you are logged in with that email address. You join right away.
+- You can also **ask to join** with the exact name of the organization under **Organization**. An admin has to
+  accept your request.
+- Making the creator a user, or removing them, needs the creator's confirmation (or a super admin's).
 - **Users** open the wallets an admin gave them access to under **Select wallet**.
 
 ## Addresses and wallets

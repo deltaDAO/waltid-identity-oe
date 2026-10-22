@@ -83,6 +83,7 @@ object Db {
         Organizations,
         OrganizationMembers,
         OrganizationAddresses,
+        OrganizationInvites,
     ).toTypedArray()
 
     @OptIn(ExperimentalUuidApi::class)
