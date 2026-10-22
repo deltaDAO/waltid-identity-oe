@@ -19,25 +19,20 @@ val RequestTracePlugin = createRouteScopedPlugin("RequestTracePlugin", { }) {
         return "$httpMethod $url ($userAgent)"
     }
 
-    fun Any.toLogString(name: String) = when {
-        this == NullBody
-                || this.toString().isEmpty() -> "no $name"
-
-        this is Collection<*> && this.isEmpty() -> "no[] $name"
-        this is Map<*, *> && this.isEmpty() -> "no{} $name "
-        else -> "$name: \"$this\""
-    }
+    // Request and response bodies contain passwords, emails and tokens, and cookies hold login tokens:
+    // only their size and names are logged, never their content.
+    fun String.sizeLogString(name: String) = if (isEmpty()) "no $name" else "$name: $length chars"
 
     onCall { call ->
         val body = runBlocking { call.receiveText() }
-        val cookies = call.request.cookies.rawCookies
-        //println(call.request.headers.entries().map { "${it.key} -> ${it.value}" })
-        LOGGER.info("REQUEST  -> ${call.toUrlLogString()}: ${body.toLogString("body")}, ${cookies.toLogString("cookies")}")
+        val cookieNames = call.request.cookies.rawCookies.keys
+        LOGGER.info("REQUEST  -> ${call.toUrlLogString()}: ${body.sizeLogString("body")}, cookies: $cookieNames")
     }
     this.onCallRespond { call, body ->
         val status = call.response.status()?.toString() ?: "Default"
         val statusNum = call.response.status()?.value ?: "DEF"
-        LOGGER.info("RESP $statusNum -> ${call.toUrlLogString()}: ${body.toLogString("body")} ($status)")
+        val bodyType = if (body == NullBody) "no body" else "body: ${body::class.simpleName}"
+        LOGGER.info("RESP $statusNum -> ${call.toUrlLogString()}: $bodyType ($status)")
     }
 }
 

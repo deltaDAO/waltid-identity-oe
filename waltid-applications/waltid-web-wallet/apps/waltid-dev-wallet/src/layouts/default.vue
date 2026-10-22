@@ -401,6 +401,7 @@ const navigation = [
         name: "Event log",
         href: `/wallet/${currentWallet.value}/eventlog`,
         icon: ClipboardDocumentListIcon,
+        adminOnly: true,
       },
       // { name: "History", href: `/wallet/${currentWallet.value}/history`, icon: ClipboardDocumentListIcon },
 

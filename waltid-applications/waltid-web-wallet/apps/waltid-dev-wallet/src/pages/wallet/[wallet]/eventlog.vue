@@ -178,8 +178,11 @@ import CenterMain from "@waltid-web-wallet/components/CenterMain.vue";
 import LoadingIndicator from "@waltid-web-wallet/components/loading/LoadingIndicator.vue";
 import useModalStore from "@waltid-web-wallet/stores/useModalStore.ts";
 import ViewEventDataModal from "@waltid-web-wallet/components/modals/ViewEventDataModal.vue";
+import {requireWalletAdmin} from "@waltid-web-wallet/composables/accountWallet.ts";
 import {useCurrentWallet} from "@waltid-web-wallet/composables/accountWallet.ts";
 
+// Admins only: members are sent back to the wallet's credentials
+requireWalletAdmin();
 const store = useModalStore();
 
 const currentWallet = useCurrentWallet();

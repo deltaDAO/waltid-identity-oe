@@ -2,6 +2,8 @@
 
 package id.walt.webwallet.web.controllers
 
+import id.walt.webwallet.db.models.AccountWalletPermissions
+import id.walt.webwallet.web.controllers.auth.ensurePermissionsForWallet
 import id.walt.webwallet.service.WalletServiceManager.eventFilterUseCase
 import id.walt.webwallet.service.WalletServiceManager.eventUseCase
 import id.walt.webwallet.service.events.EventLogFilter
@@ -56,6 +58,8 @@ fun Application.eventLogs() = walletRoute {
                 }
             }
         }) {
+            // The event log shows key and DID actions: admins of the wallet only
+            call.ensurePermissionsForWallet(AccountWalletPermissions.ADMINISTRATE)
             val limit = call.request.queryParameters["limit"]?.toIntOrNull()
             val data = call.request.queryParameters.getAll("filter")
                 ?.groupBy({ it.substringBefore("=") }, { it.substringAfter("=") }) ?: emptyMap()
@@ -90,6 +94,8 @@ fun Application.eventLogs() = walletRoute {
                 HttpStatusCode.BadRequest to { description = "Event log could not be deleted" }
             }
         }) {
+            // The event log shows key and DID actions: admins of the wallet only
+            call.ensurePermissionsForWallet(AccountWalletPermissions.ADMINISTRATE)
             val id = call.parameters.getOrFail("id").toInt()
             call.respond(HttpStatusCode.Accepted, eventUseCase.delete(id))
         }
