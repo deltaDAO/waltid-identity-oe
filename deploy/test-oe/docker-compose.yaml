@@ -15,8 +15,8 @@ services:
       # One-time cleanup of personal wallets (wallets belong to organizations only), see PersonalWalletCleanup.
       # Run once with: REMOVE_PERSONAL_WALLETS=true docker compose up -d --force-recreate wallet-api-oe
       REMOVE_PERSONAL_WALLETS: "${REMOVE_PERSONAL_WALLETS:-false}"
-      # Additional super admins (comma-separated emails); alex@delta-dao.com is always a super admin (built in)
-      SUPER_ADMIN_EMAILS: "${SUPER_ADMIN_EMAILS:-}"
+      # Super admins by account ID (comma-separated; see "Account ID" on the profile page). Set in deploy/test-oe/.env
+      SUPER_ADMIN_ACCOUNT_IDS: "${SUPER_ADMIN_ACCOUNT_IDS:-}"
     volumes:
       # Copied from waltid-services/waltid-wallet-api/config on the server (git-ignored, holds pepper and keys)
       - ./wallet-api-config:/waltid-wallet-api/config:ro

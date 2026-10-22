@@ -41,7 +41,8 @@ object EmailPass : UserPassBasedAuthMethod("email", usernameName = "email") {
         val passwordHash = PasswordHash.fromString(storedData.passwordHash ?: error("Missing password hash"))
         val check = PasswordHashing.check(credential.password, passwordHash)
 
-        authCheck(check.valid) { "Invalid password" }
+        // Same message as for an unknown email, so login does not reveal which emails have an account
+        authCheck(check.valid) { "Invalid email or password." }
         if (check.updated) {
             val newData = storedData.copy(passwordHash = check.updatedHash!!.toString())
             KtorAuthnzManager.accountStore.updateAccountIdentifierStoredData(identifier, id, newData)

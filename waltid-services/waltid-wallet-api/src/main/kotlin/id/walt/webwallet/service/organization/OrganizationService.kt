@@ -57,8 +57,9 @@ data class InviteInfo(
 
 @Serializable
 data class SuperAdminEntry(
-    val email: String,
-    /** BUILT_IN (in the code, cannot be removed), CONFIGURED (env SUPER_ADMIN_EMAILS) or ADDED (in the wallet) */
+    val accountId: String,
+    val email: String?,
+    /** CONFIGURED (env SUPER_ADMIN_ACCOUNT_IDS, cannot be changed in the app) or ADDED (in the wallet) */
     val source: String,
 )
 
@@ -94,7 +95,7 @@ data class MyOrganization(
     val organization: OrganizationInfo?,
     /** The logged-in account may see and manage every organization */
     val superAdmin: Boolean = false,
-    /** The logged-in account is a built-in super admin and may add or remove other super admins */
+    /** The logged-in account is a configured super admin and may add or remove other super admins */
     val canManageSuperAdmins: Boolean = false,
 )
 
@@ -124,7 +125,7 @@ data class OrganizationAddress(
  * and which members may use which address's wallet. Members get [AccountWalletPermissions.USE], admins
  * [AccountWalletPermissions.ADMINISTRATE] on all organization wallets.
  *
- * Super admins (emails in env `SUPER_ADMIN_EMAILS`) see every organization and can act as its admin by passing the
+ * Super admins (account IDs in env `SUPER_ADMIN_ACCOUNT_IDS`, plus those added in the app) see every organization and can act as its admin by passing the
  * organization id. The creator's role only changes with the creator's or a super admin's confirmation.
  */
 object OrganizationService {
@@ -141,79 +142,66 @@ object OrganizationService {
     private const val CHANGE_REMOVE = "REMOVE"
 
     /**
-     * Super admins that are always super admins, whatever the configuration says. Built into the code, so they
-     * cannot be removed by changing the environment.
+     * Super admins set at deploy time by account ID (env `SUPER_ADMIN_ACCOUNT_IDS`, comma-separated). They cannot be
+     * changed in the app, and they manage the super admins added in the app. Identified by account ID, not email,
+     * because emails are not verified: registering an email must never make anyone super admin.
+     * Replaceable in tests.
      */
-    private val builtInSuperAdmins = setOf("alex@delta-dao.com")
-
-    /** Additional super admins (env `SUPER_ADMIN_EMAILS`, comma-separated); replaceable in tests */
-    var additionalSuperAdminEmails: () -> Set<String> = {
-        System.getenv("SUPER_ADMIN_EMAILS").orEmpty().split(",").map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
+    var configuredSuperAdminIds: () -> Set<String> = {
+        System.getenv("SUPER_ADMIN_ACCOUNT_IDS").orEmpty().split(",").map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
     }
 
-    private fun addedSuperAdminEmails(): Set<String> = transaction {
-        SuperAdmins.selectAll().map { it[SuperAdmins.email] }.toSet()
+    private fun addedSuperAdminIds(): Set<String> = transaction {
+        SuperAdminAccounts.selectAll().map { it[SuperAdminAccounts.account].toString() }.toSet()
     }
 
-    fun superAdminEmails(): Set<String> = builtInSuperAdmins + additionalSuperAdminEmails() + addedSuperAdminEmails()
+    fun isSuperAdmin(account: Uuid): Boolean =
+        account.toString() in configuredSuperAdminIds() || account.toString() in addedSuperAdminIds()
 
-    /** Built-in super admins manage the other super admins */
-    fun isBuiltInSuperAdmin(account: Uuid): Boolean =
-        isSuperAdmin(account) && emailOf(account)?.lowercase() in builtInSuperAdmins
+    /** Super admins from the server configuration manage the other super admins */
+    fun isConfiguredSuperAdmin(account: Uuid): Boolean = account.toString() in configuredSuperAdminIds()
 
-    private fun requireBuiltInSuperAdmin(caller: Uuid) {
-        if (!isBuiltInSuperAdmin(caller)) throw ForbiddenException("Only the built-in super admin can manage super admins.")
+    private fun requireConfiguredSuperAdmin(caller: Uuid) {
+        if (!isConfiguredSuperAdmin(caller))
+            throw ForbiddenException("Only super admins from the server configuration can manage super admins.")
     }
 
     fun superAdmins(caller: Uuid): List<SuperAdminEntry> {
         if (!isSuperAdmin(caller)) throw ForbiddenException("Only super admins can see the super admins.")
-        val configured = additionalSuperAdminEmails()
-        val added = addedSuperAdminEmails()
-        return builtInSuperAdmins.map { SuperAdminEntry(it, "BUILT_IN") } +
-                (configured - builtInSuperAdmins).map { SuperAdminEntry(it, "CONFIGURED") } +
-                (added - builtInSuperAdmins - configured).map { SuperAdminEntry(it, "ADDED") }
+        val configured = configuredSuperAdminIds()
+        val added = addedSuperAdminIds() - configured
+        fun entry(id: String, source: String) =
+            SuperAdminEntry(id, runCatching { emailOf(Uuid.parse(id)) }.getOrNull(), source)
+        return configured.map { entry(it, "CONFIGURED") } + added.map { entry(it, "ADDED") }
     }
 
+    /** Adds an existing account (found by its email) as super admin; stored by account ID */
     fun addSuperAdmin(caller: Uuid, email: String) {
-        requireBuiltInSuperAdmin(caller)
+        requireConfiguredSuperAdmin(caller)
         val normalized = email.trim().lowercase()
-        require(emailRegex.matches(normalized)) { "Please enter a valid email address." }
-        if (normalized in superAdminEmails()) throw ConflictException("$normalized is already a super admin.")
+        val account = transaction {
+            Accounts.selectAll().where { Accounts.email.lowerCase() eq normalized }.singleOrNull()?.get(Accounts.id)
+        } ?: throw NotFoundException("No account with this email address. The person has to sign up first.")
+        if (isSuperAdmin(account)) throw ConflictException("$normalized is already a super admin.")
         transaction {
-            SuperAdmins.insert {
-                it[SuperAdmins.email] = normalized
+            SuperAdminAccounts.insert {
+                it[SuperAdminAccounts.account] = account
                 it[addedBy] = caller
                 it[addedOn] = now()
             }
         }
     }
 
-    fun removeSuperAdmin(caller: Uuid, email: String) {
-        requireBuiltInSuperAdmin(caller)
-        val normalized = email.trim().lowercase()
-        if (normalized in builtInSuperAdmins) throw ConflictException("Built-in super admins cannot be removed.")
-        if (normalized in additionalSuperAdminEmails())
-            throw ConflictException("This super admin is set in the server configuration (SUPER_ADMIN_EMAILS); remove it there.")
-        val removed = transaction { SuperAdmins.deleteWhere { SuperAdmins.email eq normalized } }
-        if (removed == 0) throw NotFoundException("$normalized is not a super admin.")
+    fun removeSuperAdmin(caller: Uuid, accountId: Uuid) {
+        requireConfiguredSuperAdmin(caller)
+        if (accountId.toString() in configuredSuperAdminIds())
+            throw ConflictException("This super admin is set in the server configuration (SUPER_ADMIN_ACCOUNT_IDS); remove it there.")
+        val removed = transaction { SuperAdminAccounts.deleteWhere { SuperAdminAccounts.account eq accountId } }
+        if (removed == 0) throw NotFoundException("This account is not a super admin.")
     }
 
     private fun emailOf(account: Uuid): String? = transaction {
         Accounts.selectAll().where { Accounts.id eq account }.singleOrNull()?.get(Accounts.email)
-    }
-
-    /**
-     * Super admin = the oldest account with a super admin email (ignoring case). A later account with a case variant
-     * of that email (e.g. "Alex@…") is never a super admin, even if it exists.
-     */
-    fun isSuperAdmin(account: Uuid): Boolean {
-        val email = emailOf(account)?.lowercase() ?: return false
-        if (email !in superAdminEmails()) return false
-        val oldest = transaction {
-            Accounts.selectAll().where { Accounts.email.lowerCase() eq email }
-                .minByOrNull { it[Accounts.createdOn] }?.get(Accounts.id)
-        }
-        return oldest == account
     }
 
     /** Creates the wallet of an address account and returns its id (default: wallet with key and DID) */
@@ -306,7 +294,7 @@ object OrganizationService {
     fun myOrganization(account: Uuid): MyOrganization = transaction {
         val superAdmin = isSuperAdmin(account)
         val membership = membershipOf(account)
-            ?: return@transaction MyOrganization(null, superAdmin, isBuiltInSuperAdmin(account))
+            ?: return@transaction MyOrganization(null, superAdmin, isConfiguredSuperAdmin(account))
         val organizationId = membership[OrganizationMembers.organization]
         val organization = Organizations.selectAll().where { Organizations.id eq organizationId }.single()
         val isCreator = creatorOf(organizationId) == account
@@ -321,7 +309,7 @@ object OrganizationService {
                 deletionRequested = organization[Organizations.deletionRequestedBy] != null,
             ),
             superAdmin,
-            isBuiltInSuperAdmin(account),
+            isConfiguredSuperAdmin(account),
         )
     }
 
@@ -466,6 +454,16 @@ object OrganizationService {
         val organization = organizationByName(name)
             ?: throw NotFoundException("No organization with this name. Check the spelling or ask its admin for an invite link.")
         return requestMembership(account, organization[Organizations.id])
+    }
+
+    /** Withdraws the own join request that is still waiting, so the account can join another organization */
+    fun withdrawJoinRequest(account: Uuid) {
+        val removed = transaction {
+            OrganizationMembers.deleteWhere {
+                (OrganizationMembers.account eq account) and (status eq OrganizationMembershipStatus.PENDING)
+            }
+        }
+        if (removed == 0) throw NotFoundException("You have no waiting join request.")
     }
 
     private fun requestMembership(account: Uuid, organization: Uuid): MyOrganization {
@@ -740,9 +738,18 @@ object OrganizationService {
         }
     }
 
+    /** A single-use, purpose-bound challenge the address signs to be added to the organization */
+    fun addressChallenge(admin: Uuid, walletHost: String, organizationId: Uuid? = null): String {
+        val organization = adminOrganization(admin, organizationId)
+        val organizationName = transaction {
+            Organizations.selectAll().where { Organizations.id eq organization }.single()[Organizations.name]
+        }
+        return AddressLinkChallenges.create(admin, organization, organizationName, walletHost)
+    }
+
     /**
-     * Verifies that the admin controls the address (signed nonce from `GET /wallet-api/auth/account/web3/nonce`)
-     * and adds it to the organization.
+     * Verifies that the admin controls the address (signed challenge from [addressChallenge]) and adds it to the
+     * organization. Login challenges are not accepted here.
      */
     suspend fun linkAddress(
         admin: Uuid,
@@ -750,8 +757,13 @@ object OrganizationService {
         organizationId: Uuid? = null,
         createWallet: suspend (Uuid, String) -> Uuid = defaultCreateWallet,
     ): Pair<String, LinkResult> {
-        adminOrganization(admin, organizationId)
-        val address = runCatching { Web3.verifySiweLogin(request) }.getOrElse { ex ->
+        val organization = adminOrganization(admin, organizationId)
+        require(AddressLinkChallenges.consume(request.challenge, admin, organization)) {
+            "This challenge is not valid anymore (expired, already used or for another organization). Please start again."
+        }
+        val address = runCatching {
+            Web3.verifySignedMessage(request.challenge, request.signed, request.publicKey, request.aa)
+        }.getOrElse { ex ->
             throw IllegalArgumentException("Could not verify that you control this address: ${ex.message}", ex)
         }
         return address to linkVerifiedAddress(admin, address, createWallet, organizationId)

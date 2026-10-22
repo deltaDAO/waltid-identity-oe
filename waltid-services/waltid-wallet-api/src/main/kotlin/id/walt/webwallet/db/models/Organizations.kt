@@ -85,12 +85,11 @@ object OrganizationInvites : Table("organization_invites") {
     override val primaryKey = PrimaryKey(code)
 }
 
-/** Super admins added in the wallet (by the built-in super admin), in addition to the built-in and configured ones */
-object SuperAdmins : Table("super_admins") {
-    /** Lowercase email */
-    val email = varchar("email", 128)
+/** Super admins added in the wallet by a configured super admin; identified by account ID, never by email */
+object SuperAdminAccounts : Table("super_admin_accounts") {
+    val account = kotlinxUuid("account_id")
     val addedBy = kotlinxUuid("added_by")
     val addedOn = timestamp("added_on")
 
-    override val primaryKey = PrimaryKey(email)
+    override val primaryKey = PrimaryKey(account)
 }

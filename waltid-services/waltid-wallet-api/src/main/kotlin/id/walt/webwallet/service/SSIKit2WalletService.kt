@@ -790,8 +790,16 @@ class SSIKit2WalletService(
         // For JWS+Json we take the header as given
         val signature = if (jwsObj != null) {
             val headers = jwsObj.header.toJSONObject().toMutableMap()
-            headers["kid"]?.toJsonPrimitive()?.content
-            // headers["kid"] = JsonPrimitive(alias)
+            // The header kid may name this key, or a DID of this wallet that uses this key (e.g. "did:…#key-1" for
+            // enveloped presentations), but nothing else: a signature must not claim to come from another key.
+            headers["kid"]?.toJsonPrimitive()?.content?.let { kid ->
+                val keyId = key.getKeyId()
+                val kidMatchesThisKey = kid == alias || kid == keyId ||
+                        DidsService.list(walletId).any { did ->
+                            (did.keyId == alias || did.keyId == keyId) && (kid == did.did || kid.startsWith("${did.did}#"))
+                        }
+                require(kidMatchesThisKey) { "JWS header kid must be this key or a DID of this wallet that uses it: $kid" }
+            }
             val dataBytes = jwsObj.payload.toString().toByteArray(Charsets.UTF_8)
             key.signJws(dataBytes, headers.toJsonObject())
         }

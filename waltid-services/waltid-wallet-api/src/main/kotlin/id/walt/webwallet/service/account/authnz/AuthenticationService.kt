@@ -111,7 +111,8 @@ class AuthenticationService(private val dispatcher: CoroutineDispatcher = Dispat
 
         private fun requireAccountIdByAccountIdentifier(accountIdentifier: AccountIdentifier) =
             getAccountIdByAccountIdentifier(accountIdentifier)
-                ?: throw IllegalArgumentException("No account found for ${accountIdentifier.accountIdentifierName} login")
+                // Same message as for a wrong password, so login does not reveal which emails have an account
+                ?: throw IllegalArgumentException("Invalid email or password.")
 
         override suspend fun addAccountIdentifierStoredData(
             accountIdentifier: AccountIdentifier,

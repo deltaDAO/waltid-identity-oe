@@ -452,14 +452,11 @@ object OidcApi : CIProvider() {
             }) {
                 val params = call.receiveParameters().toMap()
 
-                logger.info { "/token params: $params" }
 
                 val tokenReq = TokenRequest.fromHttpParameters(params)
-                logger.info { "/token tokenReq from params: $tokenReq" }
 
                 try {
                     val tokenResp = processTokenRequest(tokenReq)
-                    logger.info { "/token tokenResp: $tokenResp" }
                     call.respond(tokenResp.toJSON())
                 } catch (exc: TokenError) {
                     logger.error(exc) { "Token error: " }

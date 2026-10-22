@@ -25,9 +25,6 @@ import kotlin.uuid.ExperimentalUuidApi
 /** Members of a JWK that belong to the private key */
 private val PRIVATE_JWK_MEMBERS = setOf("d", "p", "q", "dp", "dq", "qi", "oth", "k")
 
-private fun ApplicationCall.isWalletAdmin(): Boolean =
-    runCatching { ensurePermissionsForWallet(AccountWalletPermissions.ADMINISTRATE) }.isSuccess
-
 fun Application.keys() = walletRoute {
     route("keys", {
         tags = listOf("Keys")
@@ -249,7 +246,7 @@ fun Application.keys() = walletRoute {
         }) {
 
             get("load", {
-                summary = "Show a specific key"
+                summary = "Show a specific key (public part only)"
                 response {
                     HttpStatusCode.OK to {
                         description = "The key document (JSON)"
@@ -260,8 +257,8 @@ fun Application.keys() = walletRoute {
                 val key = call.getWalletService().loadKey(
                     call.parameters["keyId"] ?: throw IllegalArgumentException("No key supplied")
                 )
-                // Only admins of the wallet may see the private key; members get the public part
-                call.respond(if (call.isWalletAdmin()) key else JsonObject(key.filterKeys { it !in PRIVATE_JWK_MEMBERS }))
+                // Only the public part, for everyone: the private key leaves the wallet only through "export" (admins)
+                call.respond(JsonObject(key.filterKeys { it !in PRIVATE_JWK_MEMBERS }))
             }
 
             get("meta", {
@@ -350,6 +347,8 @@ fun Application.keys() = walletRoute {
                     }
                 }
             }) {
+                // Signing with the wallet's keys needs at least USE: read-only accounts may not sign
+                call.ensurePermissionsForWallet(AccountWalletPermissions.USE)
                 val keyId = call.parameters.getOrFail("keyId")
                 val message = call.receive<JsonElement>()
                 call.respond(call.getWalletService().sign(keyId, message))

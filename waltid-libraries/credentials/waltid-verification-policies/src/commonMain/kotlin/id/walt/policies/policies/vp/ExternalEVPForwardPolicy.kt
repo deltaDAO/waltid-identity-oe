@@ -34,7 +34,6 @@ class ExternalEVPForwardPolicy : CredentialWrapperValidatorPolicy() {
     @OptIn(ExperimentalEncodingApi::class)
     override suspend fun verify(data: JsonObject, args: Any?, context: Map<String, Any>): Result<Any> {
 
-        println("verification data is $data args is $args context is $context")
         logger.debug {
             "verification data is $data args is $args context is $context"
         }
@@ -52,13 +51,11 @@ class ExternalEVPForwardPolicy : CredentialWrapperValidatorPolicy() {
         val vpTokenArray = context["vp_token"] as? JsonArray
         val evpJwt = vpTokenArray?.getOrNull(1)?.jsonPrimitive?.content
 
-        println("the evp jwt being sent is $evpJwt")
         val client = http
 
         logger.debug {
             "the client is $client"
         }
-        println("the client is $client")
 
         return try {
             val response = client.post(url) {

@@ -73,6 +73,22 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: "signerServer claim missing from token" });
   }
 
+  // The access token is sent to the signer server, so only to configured ones (NUXT_SIGNER_SERVER_ALLOWLIST,
+  // comma-separated origins), never to a URL just because the token names it
+  const allowedSigners = String(config.signerServerAllowlist || "")
+    .split(",")
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
+    .filter(Boolean);
+  let signerOrigin = "";
+  try {
+    signerOrigin = new URL(signerUrl).origin;
+  } catch {
+    throw createError({ statusCode: 400, message: "signerServer claim is not a valid URL" });
+  }
+  if (!allowedSigners.includes(signerOrigin)) {
+    throw createError({ statusCode: 403, message: "This signer server is not allowed." });
+  }
+
   let challenge: any;
   try {
     challenge = await $fetch(`${config.walletApiInternal}/auth/account/web3/nonce`);
@@ -87,7 +103,6 @@ export default defineEventHandler(async (event) => {
   let signerResponse: any;
   try {
     const origin = getRequestOrigin(event);
-    console.log("[callback] calling signer at", signerUrl, "with origin", origin);
 
     signerResponse = await $fetch(`${signerUrl}/api/v1/sign-message`, {
       method: "POST",

@@ -167,7 +167,6 @@ object KeycloakAccountStrategy : PasswordAccountStrategy<KeycloakAccountRequest>
 
         val jwt = verifiedToken(token)
 
-        println("JWT: ${jwt.subject}")
 
         val registeredUserId =
             if (AccountsService.hasAccountOidcId(jwt.subject)) {

@@ -92,6 +92,11 @@ fun Application.organizationRoutes() {
                     call.respond(HttpStatusCode.Created, OrganizationService.createOrganization(call.accountUuid(), req.name))
                 }
 
+                delete("join", { summary = "Withdraw the own join request that is still waiting" }) {
+                    OrganizationService.withdrawJoinRequest(call.accountUuid())
+                    call.respond(HttpStatusCode.NoContent)
+                }
+
                 post("join", {
                     summary = "Join with a personal invite code (joins directly), or ask to join by exact name (an admin approves)"
                     request { body<JoinOrganizationRequest>() }
@@ -144,14 +149,14 @@ fun Application.organizationRoutes() {
                         call.respond(OrganizationService.superAdmins(call.accountUuid()))
                     }
                     post({
-                        summary = "Add a super admin (built-in super admin only)"
+                        summary = "Add an existing account as super admin, by its email (configured super admins only)"
                         request { body<CreateInviteRequest>() }
                     }) {
                         OrganizationService.addSuperAdmin(call.accountUuid(), call.receive<CreateInviteRequest>().email)
                         call.respond(HttpStatusCode.NoContent)
                     }
-                    delete("{email}", { summary = "Remove an added super admin (built-in super admin only)" }) {
-                        OrganizationService.removeSuperAdmin(call.accountUuid(), call.parameters.getOrFail("email"))
+                    delete("{accountId}", { summary = "Remove an added super admin (configured super admins only)" }) {
+                        OrganizationService.removeSuperAdmin(call.accountUuid(), call.memberParam())
                         call.respond(HttpStatusCode.NoContent)
                     }
                 }
@@ -216,6 +221,12 @@ fun Application.organizationRoutes() {
                 }
 
                 route("addresses") {
+                    get("challenge", {
+                        summary = "Single-use challenge the address signs (personal_sign) to be added to the organization"
+                        response { HttpStatusCode.OK to { body<String>() } }
+                    }) {
+                        call.respond(OrganizationService.addressChallenge(call.accountUuid(), call.request.host(), call.organizationParam()))
+                    }
                     get({
                         summary = "Addresses of the organization and who may use their wallets (admins only)"
                         response { HttpStatusCode.OK to { body<List<OrganizationAddress>>() } }
@@ -224,7 +235,7 @@ fun Application.organizationRoutes() {
                     }
                     post({
                         summary = "Add an address to the organization (proves control with a signed nonce)"
-                        description = "Sign the challenge from GET /wallet-api/auth/account/web3/nonce with the address (personal_sign)."
+                        description = "Sign the challenge from GET /wallet-api/organization/addresses/challenge with the address (personal_sign)."
                         request { body<Web3.SiweRequest> { required = true } }
                         response {
                             HttpStatusCode.Created to { body<AddedAddress>() }

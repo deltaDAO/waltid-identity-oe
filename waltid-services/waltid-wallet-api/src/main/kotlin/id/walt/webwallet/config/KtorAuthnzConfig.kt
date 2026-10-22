@@ -15,6 +15,9 @@ private const val defaultAuthFlowJson = """
 }
 """
 
+/** Public part ("x") of the example Ed25519 key in walt.id's sample configurations */
+private const val PUBLISHED_EXAMPLE_KEY_X = "Ew76rQJ9gPHCOBOwJlf__Il5IjgSAc3bQ_a8psd-F3E"
+
 @Serializable
 data class KtorAuthnzConfig(
     val requireHttps: Boolean,
@@ -48,6 +51,24 @@ data class KtorAuthnzConfig(
 ) {
     val configuredSigningKey by lazy { signingKey?.let { KeyManager.resolveSerializedKeyBlocking(it.toString()) } }
     val configuredVerificationKey by lazy { KeyManager.resolveSerializedKeyBlocking(verificationKey.toString()) }
+
+    /**
+     * Refuses to start with settings that make login tokens forgeable or eternal:
+     * the signing key walt.id publishes as example, or a login flow without `expiration` (tokens without `exp`).
+     */
+    fun requireSafeTokenConfiguration() {
+        val keys = listOfNotNull(signingKey, verificationKey).joinToString(" ")
+        require(PUBLISHED_EXAMPLE_KEY_X !in keys) {
+            "ktor-authnz.conf uses the example signing key published by walt.id: anyone could sign login tokens. " +
+                    "Generate a new Ed25519 key for this deployment and set signingKey (private) and verificationKey."
+        }
+        flowConfigs.forEach { flow ->
+            require(flow.expiration != null) {
+                "ktor-authnz.conf: the login flow \"${flow.method}\" has no expiration, so its login tokens would never expire. " +
+                        "Set e.g. expiration: \"7d\"."
+            }
+        }
+    }
 
     val flowConfigs: List<AuthFlow>
         get() = (listOfNotNull(authFlow) + authFlows.orEmpty())

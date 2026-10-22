@@ -99,8 +99,10 @@ import {onBeforeUnmount, ref} from "vue";
 
 const props = withDefaults(defineProps<{
   callback: () => void;
-  /** Endpoint that takes the signed nonce ({ challenge, signed, publicKey }) */
+  /** Endpoint that takes the signed challenge ({ challenge, signed, publicKey }) */
   postUrl: string;
+  /** Endpoint that issues the challenge to sign (plain text) */
+  challengeUrl?: string;
   title?: string;
   description?: string;
   /** Shown when the endpoint answers 409 */
@@ -109,6 +111,7 @@ const props = withDefaults(defineProps<{
   title: "Add an address",
   description: "Prove that you control the address by signing a message.",
   conflictMessage: "This address cannot be added here.",
+  challengeUrl: "/wallet-api/auth/account/web3/nonce",
 });
 
 const store = useModalStore();
@@ -156,7 +159,7 @@ function apiErrorMessage(err: any): string {
 }
 
 async function postSignedNonce(sign: (nonce: string) => Promise<{ address: string; signed: string }>) {
-  const nonce = await $fetch<string>("/wallet-api/auth/account/web3/nonce", {responseType: "text"});
+  const nonce = await $fetch<string>(props.challengeUrl, {responseType: "text"});
   const {address, signed} = await sign(nonce);
 
   try {

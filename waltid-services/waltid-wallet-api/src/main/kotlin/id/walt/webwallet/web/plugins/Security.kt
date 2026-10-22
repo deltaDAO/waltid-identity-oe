@@ -15,6 +15,7 @@ import id.walt.webwallet.config.KtorAuthnzConfig
 import id.walt.webwallet.service.OidcLoginService
 import id.walt.webwallet.service.WalletServiceManager.oidcConfig
 import id.walt.webwallet.service.account.authnz.AuthenticationService
+import id.walt.webwallet.service.account.authnz.StrictJwtTokenHandler
 import id.walt.webwallet.web.controllers.auth.*
 import id.walt.webwallet.web.controllers.auth.oidc.oidcLog
 import id.walt.webwallet.web.controllers.auth.oidc.oidcLogNoco
@@ -110,12 +111,14 @@ val walletAuthenticationPluginAmendment: suspend () -> Unit = suspend {
         val configSigningKey = config.configuredSigningKey
         val configVerificationKey = config.configuredVerificationKey
 
-        KtorAuthnzManager.tokenHandler = JwtTokenHandler().apply {
+        config.requireSafeTokenConfiguration()
+
+        KtorAuthnzManager.tokenHandler = StrictJwtTokenHandler(JwtTokenHandler().apply {
             if (configSigningKey != null) {
                 signingKey = configSigningKey
             }
             verificationKey = configVerificationKey
-        }
+        })
 
         val webConfig = ConfigManager.getConfig<WebConfig>()
         SessionTokenCookieHandler.domain = config.cookieDomain

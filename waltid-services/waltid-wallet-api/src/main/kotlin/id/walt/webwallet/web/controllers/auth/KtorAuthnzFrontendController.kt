@@ -142,7 +142,6 @@ fun Application.ktorAuthnzFrontendRoutes() {
 
             post("login") {
                 val providedToken = call.receiveText()
-                println("providedToken: $providedToken")
 
                 val (account, token) = if (providedToken.isNotEmpty()) {
                     val token =
@@ -203,6 +202,11 @@ fun Application.ktorAuthnzFrontendRoutes() {
             }
 
             post("logout") {
+                // End the session on the server too, so the token is no longer accepted (not only the cookie deleted)
+                val token = call.request.cookies["ktor-authnz-auth"] ?: call.request.cookies["auth.token"]
+                    ?: call.request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")
+                if (token != null) KtorAuthnzManager.tokenHandler.dropToken(token)
+
                 call.response.cookies.append("ktor-authnz-auth", "", CookieEncoding.URI_ENCODING, 0L, GMTDate())
                 call.response.cookies.append("auth.token", "", CookieEncoding.URI_ENCODING, 0L, GMTDate())
 

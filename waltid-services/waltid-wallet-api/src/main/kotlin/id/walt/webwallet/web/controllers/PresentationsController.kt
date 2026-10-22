@@ -1,5 +1,7 @@
 package id.walt.webwallet.web.controllers
 
+import id.walt.webwallet.db.models.AccountWalletPermissions
+import id.walt.webwallet.web.controllers.auth.ensurePermissionsForWallet
 import id.walt.crypto.keys.jwk.JWKKey
 import id.walt.did.dids.DidService
 import id.walt.oid4vc.data.CredentialFormat
@@ -29,6 +31,8 @@ fun Application.presentations() = walletRoute {
             description =
                 "Creates a VP-JWT from selected credentials and wraps it in an Enveloped Verifiable Presentation object as per VC Data Model 2.0."
         }) {
+            // Signing with the wallet's keys needs at least USE: read-only accounts may not sign
+            call.ensurePermissionsForWallet(AccountWalletPermissions.USE)
             val wallet = call.getWalletService()
 
             val req = call.receive<GenerateEnvelopedPresentationRequest>()

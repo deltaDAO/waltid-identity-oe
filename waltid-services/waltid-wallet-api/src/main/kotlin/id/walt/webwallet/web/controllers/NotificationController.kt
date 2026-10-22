@@ -185,7 +185,6 @@ object NotificationController {
                         offer = Json.parseToJsonElement(offer).jsonObject["url"]!!.jsonPrimitive.content
                     }
 
-                    println("Got notification for $id for: $offer")
 
                     val queries = URI(offer).query.split("&").groupBy(
                         keySelector = { splitQueryParameter(it).first }, valueTransform = { splitQueryParameter(it).second }

@@ -101,7 +101,6 @@ object EntraIssuanceApi {
 
         println("> Doing Entra authorize...")
         val accessToken = authorization.getAccessToken()
-        println("> Using access token: $accessToken")
 
         val createIssuanceReq = EntraFullIssuanceRequest(
             authority = req.authority,

@@ -461,7 +461,6 @@ async function connectOidc() {
 }
 
 async function login() {
-    console.log("logging in");
     isLoggingIn.value = true;
 
     // ktor-authnz: check email + password, then hand the session token to nuxt-auth (same as web3 login)
@@ -515,8 +514,6 @@ async function openWeb3() {
   const ethereum = MMSDK.getProvider();
     const response = await fetch("/wallet-api/auth/account/web3/nonce", { method: "GET" });
     const challenge = await response.text();
-    console.log("====Frontend DEBUG LOGS====");
-    console.log("Received JWT:", challenge);
 
 
     const accounts = await ethereum.request({ method: "eth_requestAccounts" });
@@ -527,7 +524,6 @@ async function openWeb3() {
         params: [challenge, address]
     });
 
-    console.log("Signature:", signature);
 
 
     const verificationResponse = await fetch("/wallet-api/auth/account/web3/signed", {
@@ -541,14 +537,8 @@ async function openWeb3() {
     });
 
 
-    console.log("Signing message:", {
-        challenge,
-        address,
-        messageToSign: challenge
-    });
 
     const result = await verificationResponse.json();
-    console.log("Verification result: ", result);
     await authnzLogin(address, result.token);
 }
 
@@ -610,7 +600,6 @@ function openSsoPopup(
 
 async function connectDfns() {
   if (!email.value) return
-  console.log(`Logging in as ${email.value}...`)
 
   const config = useRuntimeConfig()
 
@@ -621,7 +610,6 @@ async function connectDfns() {
   const relyingParty = (config.public.rpId || "wallet-dev-stage.oceanenterprise.io") as string
 
   try {
-    console.log('Initiating SSO login...')
 
     const ssoInitRes = await fetch(`${baseUrl}/auth/login/sso/init`, {
       method: 'POST',
@@ -652,7 +640,6 @@ async function connectDfns() {
     }
 
     const { token } = await ssoCompleteRes.json()
-    console.log('SSO authentication successful')
 
     let webAuthnSigner = new WebAuthnSigner({
       relyingParty: {
@@ -661,7 +648,6 @@ async function connectDfns() {
       },
     })
 
-    console.log(`JWT: ${token}`)
     const dfnsBrowserClient = new DfnsApiClient({
       baseUrl,
       authToken: token,
@@ -676,7 +662,6 @@ async function connectDfns() {
     })
 
     if (!userProfile.isRegistered) {
-        console.log('No passkey found — registering for transaction signing...')
 
       const registrationCode = await promptForRegistrationCode()
       if (!registrationCode) {
@@ -693,7 +678,6 @@ async function connectDfns() {
         registrationCode,
       })
 
-      console.log('Passkey registered successfully')
     }
 
     let accounts
@@ -708,19 +692,16 @@ async function connectDfns() {
     }
     const walletId = accounts?.items.filter(wallet => wallet.status === "Active")[0].id as string
 
-    console.log('Initializing Dfns EOA wallet...')
     const dfnsWallet = await DfnsWallet.init({
       walletId,
       dfnsClient: dfnsBrowserClient,
     })
-    console.log(`Dfns EOA address: ${dfnsWallet.address}`)
 
     const response = await fetch("/wallet-api/auth/account/web3/nonce", { method: "GET" });
     const challenge = await response.text();
 
     const signature = await dfnsWallet.signMessage({message: challenge})
 
-    console.log("Signature:", signature);
 
 
     const verificationResponse = await fetch("/wallet-api/auth/account/web3/signed", {
@@ -734,7 +715,6 @@ async function connectDfns() {
     });
 
     const result = await verificationResponse.json();
-    console.log("Verification result: ", result);
     await authnzLogin(dfnsWallet.address, result.token);
 
   } catch (err) {
@@ -769,7 +749,6 @@ onMounted(() => {
   const route = useRoute();
 
   if (route.redirectedFrom) {
-    console.log(`Redirected from: ${JSON.stringify(route.redirectedFrom)}`);
     signInRedirectUrl.value = route.redirectedFrom.fullPath;
   }
 
@@ -783,7 +762,6 @@ onMounted(() => {
 });
 
 async function authnzLogin(address, token) {
-    console.log("authnz: logging in");
     isLoggingIn.value = true;
 
     /*const userData = {
@@ -803,7 +781,6 @@ async function authnzLogin(address, token) {
             };
         })
         .catch((err) => {
-            console.log("Could not sign in", err);
             error.value = {
                 isError: true,
                 message: "Sign in failed!" //(await response.text())
@@ -818,7 +795,6 @@ async function tryLoginWithOidcSession() {
     });
 
     const tokenText = await token.text();
-    console.log("text token : " + tokenText);
 
     await signIn(
         {
@@ -829,8 +805,6 @@ async function tryLoginWithOidcSession() {
         { callbackUrl: signInRedirectUrl.value }
     )
         .then(() => {
-            console.log("Signed in with OIDC");
-            console.log("Token: " + decodeJwt(tokenText).sub);
             user.value = {
                 token: tokenText,
                 id: "",
@@ -839,10 +813,8 @@ async function tryLoginWithOidcSession() {
                 oidcSession: true
             };
 
-            console.log("Wrote to user: " + JSON.stringify(user.value));
         })
         .catch((err) => {
-            console.log("Could not sign in", err);
             error.value = {
                 isError: true,
                 message: "Your OIDC sign in failed."

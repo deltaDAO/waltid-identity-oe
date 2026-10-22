@@ -199,6 +199,8 @@ export default defineNuxtConfig({
     tokenUrl: "",
     clientSecret: "",
     walletApiInternal: "",
+    // Origins of signer servers the login callback may send access tokens to (comma-separated)
+    signerServerAllowlist: "",
     adminUserGroupName: ""
     },
 

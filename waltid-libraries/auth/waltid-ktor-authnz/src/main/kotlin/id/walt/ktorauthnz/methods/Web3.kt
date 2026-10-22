@@ -2,6 +2,7 @@
 
 package id.walt.ktorauthnz.methods
 
+import java.util.concurrent.ConcurrentHashMap
 import id.walt.crypto.keys.KeyType
 import id.walt.crypto.keys.jwk.JWKKey
 import id.walt.crypto.utils.JwsUtils.decodeJws
@@ -106,22 +107,35 @@ object Web3 : AuthenticationMethod("web3") {
         val decodedJwt = challenge.decodeJws()
         val jwtPayload = decodedJwt.payload.jsonObject
 
-        //val nonce = jwtPayload["nonce"]?.jsonPrimitive?.content ?: authFailure("No nonce in token")
+        val nonce = jwtPayload["nonce"]?.jsonPrimitive?.content ?: authFailure("No nonce in token")
         val exp = jwtPayload["exp"]?.jsonPrimitive?.long ?: authFailure("No exp in token")
 
         val now = Clock.System.now().epochSeconds
         if (now > exp) {
             authFailure("Token expired")
         }
+        // Each challenge works once: a signed challenge cannot be replayed
+        usedNonces.entries.removeIf { it.value < now }
+        authCheck(!usedNonces.containsKey(nonce)) { "This challenge was already used. Request a new one." }
 
         log.trace { "Challenge did not yet expire. Verifying challenge signature..." }
 
-        return if (siweReq.aa) {
-            smartAccountVerifier.verify(challenge, siweReq.signed, siweReq.publicKey)
-        } else {
-            verifyEthereum2(challenge, siweReq.signed, siweReq.publicKey)
-        }
+        val address = verifySignedMessage(challenge, siweReq.signed, siweReq.publicKey, siweReq.aa)
+        // Mark as used only after a valid signature, so others cannot burn challenges; the first valid use wins
+        authCheck(usedNonces.putIfAbsent(nonce, exp) == null) { "This challenge was already used. Request a new one." }
+        return address
     }
+
+    /** Nonces of login challenges already used (until their expiry), per wallet API instance */
+    private val usedNonces = ConcurrentHashMap<String, Long>()
+
+    /**
+     * Verifies that [address] signed [message] (personal_sign, or ERC-1271 for smart accounts when [aa]) and returns
+     * the lowercase address. For signed messages other than the login challenge, e.g. purpose-bound challenges.
+     */
+    suspend fun verifySignedMessage(message: String, signed: String, address: String, aa: Boolean = false): String =
+        if (aa) smartAccountVerifier.verify(message, signed, address)
+        else verifyEthereum2(message, signed, address)
 
     override fun Route.registerAuthenticationRoutes(
         authContext: ApplicationCall.() -> AuthContext,

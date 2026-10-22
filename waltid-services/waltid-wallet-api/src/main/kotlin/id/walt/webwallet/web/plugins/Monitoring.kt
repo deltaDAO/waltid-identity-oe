@@ -14,7 +14,8 @@ val RequestTracePlugin = createRouteScopedPlugin("RequestTracePlugin", { }) {
     fun ApplicationCall.toUrlLogString(): String {
         val httpMethod = request.httpMethod.value
         val userAgent = request.headers["User-Agent"]?.take(14)?.split("/")?.first()
-        val url = url()
+        // Path only: query strings can carry codes and tokens
+        val url = request.path()
 
         return "$httpMethod $url ($userAgent)"
     }

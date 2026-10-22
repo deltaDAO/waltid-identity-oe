@@ -39,8 +39,9 @@
       <h2 class="text-lg font-semibold">Super admins</h2>
       <p class="text-sm text-gray-600">
         Super admins see and manage every organization.
-        <span v-if="canManageSuperAdmins">As built-in super admin, you add and remove the others.</span>
-        <span v-else>Only the built-in super admin can add or remove super admins.</span>
+        <span v-if="canManageSuperAdmins">As super admin from the server configuration, you add and remove the others.</span>
+        <span v-else>Only super admins from the server configuration can add or remove super admins.</span>
+        Only existing accounts can be added.
       </p>
       <form v-if="canManageSuperAdmins" class="flex flex-wrap items-center gap-2" @submit.prevent="addSuperAdmin">
         <input
@@ -55,11 +56,14 @@
         </button>
       </form>
       <ul class="divide-y divide-gray-100 border rounded-2xl px-2" role="list">
-        <li v-for="entry in superAdmins" :key="entry.email" class="flex flex-wrap items-center justify-between gap-2 py-3">
-          <span class="truncate">{{ entry.email }}</span>
+        <li v-for="entry in superAdmins" :key="entry.accountId" class="flex flex-wrap items-center justify-between gap-2 py-3">
+          <div class="min-w-0">
+            <p class="truncate">{{ entry.email || "(no email)" }}</p>
+            <p class="text-xs text-gray-500 font-mono truncate">{{ entry.accountId }}</p>
+          </div>
           <div class="flex items-center gap-2">
             <span class="rounded-md px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset">
-              {{ entry.source === 'BUILT_IN' ? 'Built in' : entry.source === 'CONFIGURED' ? 'Server configuration' : 'Added' }}
+              {{ entry.source === 'CONFIGURED' ? 'Server configuration' : 'Added' }}
             </span>
             <button
               v-if="canManageSuperAdmins && entry.source === 'ADDED'"
@@ -131,9 +135,9 @@ async function addSuperAdmin() {
 }
 
 async function removeSuperAdmin(entry) {
-  if (!confirm(`Remove ${entry.email} as super admin?`)) return;
+  if (!confirm(`Remove ${entry.email || entry.accountId} as super admin?`)) return;
   try {
-    await $fetch(`/wallet-api/organization/super-admins/${encodeURIComponent(entry.email)}`, { method: "DELETE" });
+    await $fetch(`/wallet-api/organization/super-admins/${entry.accountId}`, { method: "DELETE" });
     await load();
   } catch (err) {
     errorMessage.value = err?.data?.message || "Could not remove the super admin.";

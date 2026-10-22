@@ -2,6 +2,7 @@
 
 package id.walt.webwallet.service.oidc4vc
 
+import id.walt.webwallet.service.dids.DidsService
 import com.nimbusds.jose.jwk.ECKey
 import id.walt.crypto.keys.Key
 import id.walt.crypto.keys.KeyManager
@@ -135,7 +136,6 @@ class TestCredentialWallet(
     }
 
     override fun verifyTokenSignature(target: TokenTarget, token: String): Boolean {
-        println("VERIFYING TOKEN: ($target) $token")
         val jwtHeader = runCatching {
             Json.parseToJsonElement(token.split(".")[0].base64UrlDecode().decodeToString()).jsonObject
         }.getOrElse {
@@ -206,22 +206,20 @@ class TestCredentialWallet(
         session: VPresentationSession,
         tokenRequest: TokenRequest
     ): PresentationResult {
-        println("=== GENERATING PRESENTATION FOR VP TOKEN - Session: $session")
 
         val selectedCredentials =
             HACK_outsideMappedSelectedCredentialsPerSession[session.authorizationRequest!!.state + session.authorizationRequest.presentationDefinition?.id]!!
         val selectedDisclosures =
             HACK_outsideMappedSelectedDisclosuresPerSession[session.authorizationRequest.state + session.authorizationRequest.presentationDefinition?.id]
 
-        println("Selected credentials: $selectedCredentials")
 //        val matchedCredentials = walletService.getCredentialsByIds(selectedCredentials)
         val matchedCredentials = credentialsService.get(wallet, selectedCredentials)
-        println("Matched credentials: $matchedCredentials")
 
-        println("Using disclosures: $selectedDisclosures")
+        // Only DIDs and keys of this wallet may sign: never another wallet's key, even if its DID is passed in
+        require(DidsService.get(wallet, did) != null) { "The DID used for the presentation does not belong to this wallet." }
         val key = runBlocking {
             runCatching {
-                DidService.resolveToKey(did).getOrThrow().let { KeysService.get(it.getKeyId()) }
+                DidService.resolveToKey(did).getOrThrow().let { KeysService.get(wallet, it.getKeyId()) }
                     ?.let { KeyManager.resolveSerializedKey(it.document) }
             }
         }.getOrElse {
@@ -232,7 +230,6 @@ class TestCredentialWallet(
         } ?: error("No key was resolved when trying to resolve key to sign JWS to generate presentation for vp_token")
 
         val jwtsPresented = CredentialFilterUtils.getJwtVcList(matchedCredentials, selectedDisclosures)
-        println("jwtsPresented: $jwtsPresented")
 
         val sdJwtVCsPresented = runBlocking {
             matchedCredentials.filter { it.format == CredentialFormat.sd_jwt_vc }.map {
@@ -262,7 +259,6 @@ class TestCredentialWallet(
                 withKBJwt = true
             )
         }
-        println("sdJwtVCsPresented: $sdJwtVCsPresented")
 
         val mDocsPresented = runBlocking {
             val matchingMDocs = matchedCredentials.filter { it.format == CredentialFormat.mso_mdoc }
@@ -302,7 +298,6 @@ class TestCredentialWallet(
                 }
             } else listOf()
         }
-        println("mDocsPresented: $mDocsPresented")
 
         val presentationId = (session.presentationDefinition?.id ?: "urn:uuid:${randomUUIDString().lowercase()}")
 
@@ -365,13 +360,11 @@ class TestCredentialWallet(
             }
         }.getOrElse { null }
         if (envelopedVpJwt != null) {
-            println("Generated Enveloped VP (vp+jwt): $envelopedVpJwt")
         }
 
         val deviceResponse =
             if (mDocsPresented.isNotEmpty()) mDocsPresented.let { DeviceResponse(it).toCBORBase64URL() } else null
 
-        println("GENERATED VP: $signedJwtVP")
 
         // DONE: filter presentations if null
         // DONE: generate descriptor mappings based on type (vp or mdoc device response)
@@ -379,7 +372,6 @@ class TestCredentialWallet(
         val presentations =
             listOf(signedJwtVP, deviceResponse, envelopedVpJwt).filterNotNull().plus(sdJwtVCsPresented)
                 .map { JsonPrimitive(it) }
-        println("presentations: $presentations")
 
         val rootPathVP = "$" + (if (presentations.size == 2) "[0]" else "")
         val rootPathMDoc = "$" + (if (presentations.size == 2) "[1]" else "")
@@ -482,7 +474,6 @@ class TestCredentialWallet(
     }
 
     fun getVpJson(credentialsPresented: List<String>, presentationId: String, nonce: String?, aud: String): String {
-        println("Credentials presented: $credentialsPresented")
         return Json.encodeToString(
             mapOf(
                 "sub" to this.did,
@@ -580,7 +571,8 @@ class TestCredentialWallet(
         val kid = keyId.takeIf { DidUtils.isDidUrl(it) }?.let {
             DidService.resolveToKey(it).getOrThrow().getKeyId()
         } ?: keyId
-        KeysService.get(kid)?.let {
+        // Keys of this wallet only
+        KeysService.get(wallet, kid)?.let {
             KeyManager.resolveSerializedKey(it.document)
         }
     }.getOrElse { throw IllegalArgumentException("Could not resolve key to sign token", it) }

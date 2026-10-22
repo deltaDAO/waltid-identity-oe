@@ -13,6 +13,10 @@
         <dd class="mt-1 sm:col-span-2 sm:mt-0">{{ account?.email || "—" }}</dd>
       </div>
       <div class="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
+        <dt class="font-medium text-gray-900">Account ID</dt>
+        <dd class="mt-1 sm:col-span-2 sm:mt-0 font-mono text-sm break-all">{{ account?.id || "—" }}</dd>
+      </div>
+      <div class="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
         <dt class="font-medium text-gray-900">Organization</dt>
         <dd class="mt-1 sm:col-span-2 sm:mt-0">
           <template v-if="organization">

@@ -45,7 +45,6 @@ object PushManager {
             val pushResponse = pushService.send(notification)
                 .get()
 
-            println("Push send response: $pushResponse")
             */
         }
     }
@@ -77,10 +76,7 @@ object PushManager {
     fun registerSubscription(subscription: Subscription) {
         if (!subscriptions.contains(subscription)) {
             subscriptions.add(subscription)
-            println("Subscription added: $subscription")
-            println("Subscriptions: $subscriptions")
         } else {
-            println("Subscription is already contained: $subscription")
         }
     }
 }

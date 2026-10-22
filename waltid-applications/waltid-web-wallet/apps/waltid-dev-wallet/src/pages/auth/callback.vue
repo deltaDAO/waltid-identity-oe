@@ -57,7 +57,6 @@ onMounted(async () => {
       body: { code, state, code_verifier: codeVerifier },
     })) as any;
 
-    console.log("Verification result: ", result);
 
     await signIn(
       { token: result.token },

@@ -53,8 +53,11 @@
     </div>
 
     <!-- Waiting for approval -->
-    <div v-else-if="!adminView && organization.status === 'PENDING'" class="rounded-md bg-yellow-50 p-4 text-yellow-800">
+    <div v-else-if="!adminView && organization.status === 'PENDING'" class="flex flex-wrap items-center gap-3 rounded-md bg-yellow-50 p-4 text-yellow-800">
       Your request to join <b>{{ organization.name }}</b> is waiting for an admin to accept it.
+      <button class="rounded-md bg-white px-2.5 py-1.5 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" type="button" @click="withdrawJoinRequest">
+        Withdraw request
+      </button>
     </div>
 
     <!-- Member -->
@@ -329,6 +332,9 @@ async function run(action, fallback) {
 const createOrganization = () =>
   run(() => $fetch("/wallet-api/organization", { method: "POST", body: { name: newName.value } }), "Could not create the organization.");
 
+const withdrawJoinRequest = () =>
+  run(() => $fetch("/wallet-api/organization/join", { method: "DELETE" }), "Could not withdraw the request.");
+
 function joinOrganization() {
   const value = joinValue.value.trim();
   // Invite codes are 32 hex characters; anything else is treated as the organization's name
@@ -404,6 +410,8 @@ function addAddress() {
     component: LinkAddressModal,
     props: {
       postUrl: adminUrl("/wallet-api/organization/addresses"),
+      // Purpose-bound, single-use challenge (not the login challenge)
+      challengeUrl: adminUrl("/wallet-api/organization/addresses/challenge"),
       title: "Add an organization address",
       description: "The address gets its own wallet, which you can share with members.",
       callback: () => load(),
@@ -423,11 +431,7 @@ async function copyInviteLink(invite) {
   }
 }
 
-onMounted(async () => {
-  await load();
-  // Opened from an invite link while logged in and not yet in an organization: join right away
-  if (route.query.invite && !organization.value && !managedOrganizationId) await joinOrganization();
-});
+onMounted(load);
 
 definePageMeta({
   layout: "default-reduced-nav",

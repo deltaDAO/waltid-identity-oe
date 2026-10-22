@@ -48,7 +48,7 @@ class OrganizationServiceTest {
         Accounts, Wallets, WalletKeys, WalletDids, WalletCredentials, WalletCategory, WalletCredentialCategoryMap,
         WalletIssuers, WalletOperationHistories, WalletSettings, WalletNotifications, Events, AccountWalletMappings,
         AuthnzUsers, AuthnzAccountIdentifiers, AuthnzStoredData,
-        Organizations, OrganizationMembers, OrganizationAddresses, OrganizationInvites, SuperAdmins,
+        Organizations, OrganizationMembers, OrganizationAddresses, OrganizationInvites, SuperAdminAccounts,
     )
 
     private lateinit var admin: Uuid
@@ -72,7 +72,7 @@ class OrganizationServiceTest {
         alice = person("alice@example.com")
         bob = person("bob@example.com")
         superAdmin = person("root@example.com")
-        OrganizationService.additionalSuperAdminEmails = { setOf("root@example.com") }
+        OrganizationService.configuredSuperAdminIds = { setOf(superAdmin.toString()) }
     }
 
     @AfterAll
@@ -435,19 +435,11 @@ class OrganizationServiceTest {
     }
 
     @Test
-    fun `the built-in super admin cannot be configured away`() {
-        OrganizationService.additionalSuperAdminEmails = { emptySet() }
-        val alex = person("alex@delta-dao.com")
-        assertTrue(OrganizationService.isSuperAdmin(alex))
-        assertTrue(!OrganizationService.isSuperAdmin(superAdmin), "Configured super admins can be removed")
-    }
-
-    @Test
-    fun `a later case variant of a super admin email is not a super admin`() {
-        val alex = person("alex@delta-dao.com")
-        val impostor = person("Alex@Delta-DAO.com", createdOn = Clock.System.now() + kotlin.time.Duration.parse("1m"))
-        assertTrue(OrganizationService.isSuperAdmin(alex))
-        assertTrue(!OrganizationService.isSuperAdmin(impostor))
+    fun `super admins are identified by account id, never by email`() {
+        assertTrue(OrganizationService.isSuperAdmin(superAdmin))
+        // Another account with (a variant of) the super admin's email is not a super admin
+        val lookalike = person("ROOT@example.com")
+        assertTrue(!OrganizationService.isSuperAdmin(lookalike))
     }
 
     @Test
@@ -495,22 +487,24 @@ class OrganizationServiceTest {
     }
 
     @Test
-    fun `only the built-in super admin manages super admins`() {
-        val alex = person("alex@delta-dao.com")
+    fun `configured super admins add and remove other super admins by existing account`() {
         val carol = person("carol@example.com")
-        assertTrue(OrganizationService.myOrganization(alex).canManageSuperAdmins)
-        assertTrue(!OrganizationService.myOrganization(superAdmin).canManageSuperAdmins)
+        val dave = person("dave@example.com")
+        assertTrue(OrganizationService.myOrganization(superAdmin).canManageSuperAdmins)
 
-        assertFailsWith<ForbiddenException> { OrganizationService.addSuperAdmin(superAdmin, "carol@example.com") }
-        OrganizationService.addSuperAdmin(alex, "Carol@Example.com")
+        // Only existing accounts can be added; registering the email later does nothing
+        assertFailsWith<NotFoundException> { OrganizationService.addSuperAdmin(superAdmin, "nobody@example.com") }
+        OrganizationService.addSuperAdmin(superAdmin, "Carol@Example.com")
         assertTrue(OrganizationService.isSuperAdmin(carol))
-        assertEquals("ADDED", OrganizationService.superAdmins(alex).single { it.email == "carol@example.com" }.source)
+        assertEquals("ADDED", OrganizationService.superAdmins(superAdmin).single { it.accountId == carol.toString() }.source)
 
-        assertFailsWith<ConflictException> { OrganizationService.removeSuperAdmin(alex, "alex@delta-dao.com") }
-        assertFailsWith<ConflictException> { OrganizationService.removeSuperAdmin(alex, "root@example.com") } // configured
-        assertFailsWith<ForbiddenException> { OrganizationService.removeSuperAdmin(carol, "carol@example.com") }
+        // Added super admins do not manage super admins, configured ones cannot be removed in the app
+        assertTrue(!OrganizationService.myOrganization(carol).canManageSuperAdmins)
+        assertFailsWith<ForbiddenException> { OrganizationService.addSuperAdmin(carol, "dave@example.com") }
+        assertFailsWith<ConflictException> { OrganizationService.removeSuperAdmin(superAdmin, superAdmin) }
 
-        OrganizationService.removeSuperAdmin(alex, "carol@example.com")
+        OrganizationService.removeSuperAdmin(superAdmin, carol)
         assertTrue(!OrganizationService.isSuperAdmin(carol))
+        assertTrue(!OrganizationService.isSuperAdmin(dave))
     }
 }

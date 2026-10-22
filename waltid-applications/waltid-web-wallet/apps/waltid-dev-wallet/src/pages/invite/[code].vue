@@ -12,8 +12,16 @@
         </p>
 
         <template v-if="loggedIn">
-          <p v-if="joining" class="text-gray-600">Joining...</p>
-          <div v-else-if="errorMessage" class="space-y-3">
+          <button
+            v-if="!errorMessage"
+            :disabled="joining"
+            class="block w-full rounded-md bg-blue-600 px-3 py-2 text-center text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+            type="button"
+            @click="join"
+          >
+            {{ joining ? "Joining..." : `Join ${invite.organizationName}` }}
+          </button>
+          <div v-else class="space-y-3">
             <p class="text-sm text-red-600" role="alert">{{ errorMessage }}</p>
             <button class="rounded-md bg-white px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 hover:bg-gray-50" type="button" @click="logoutAndRetry">
               Log in with {{ invite.email }}
@@ -95,8 +103,6 @@ onMounted(async () => {
   } finally {
     pending.value = false;
   }
-  // Already logged in: join right away (only works for the invited email address)
-  if (invite.value && loggedIn.value) await join();
 });
 
 // Public page: people without an account open it too
