@@ -184,6 +184,7 @@ class OrganizationServiceTest {
 
         val orgAddress = OrganizationService.addresses(admin).single()
         assertEquals(addr, orgAddress.address)
+        assertEquals("deltaDAO (0x0000…0001)", orgAddress.walletName, "Wallet is named after the organization")
         assertEquals(AccountWalletPermissions.ADMINISTRATE, permissionOf(admin, orgAddress.walletId))
 
         // The address can log in (web3 identifier) and owns the wallet
@@ -214,24 +215,42 @@ class OrganizationServiceTest {
     }
 
     @Test
-    fun `addresses of other organizations or persons cannot be added`() = runBlocking<Unit> {
+    fun `addresses of other organizations cannot be added`() = runBlocking<Unit> {
         organizationWithMembers()
         OrganizationService.linkVerifiedAddress(admin, address(3), fakeCreateWallet)
 
         val otherAdmin = person("other@example.com")
         OrganizationService.createOrganization(otherAdmin, "Other Org")
         assertFailsWith<ConflictException> { OrganizationService.linkVerifiedAddress(otherAdmin, address(3), fakeCreateWallet) }
+    }
 
-        // Address that is the login of a person's (email) account
+    @Test
+    fun `an address linked to a person becomes an organization address, the person keeps the email login`() = runBlocking<Unit> {
+        organizationWithMembers()
         val personAddress = address(4)
         transaction(database) {
             AuthnzUsers.insert { it[id] = alice.toJavaUuid() }
             AuthnzAccountIdentifiers.insert {
                 it[userId] = alice.toJavaUuid()
+                it[identifier] = "alice@example.com"
+            }
+            AuthnzAccountIdentifiers.insert {
+                it[userId] = alice.toJavaUuid()
                 it[identifier] = personAddress
             }
         }
-        assertFailsWith<ConflictException> { OrganizationService.linkVerifiedAddress(admin, personAddress, fakeCreateWallet) }
+
+        assertEquals(LinkResult.CREATED, OrganizationService.linkVerifiedAddress(admin, personAddress, fakeCreateWallet))
+
+        transaction(database) {
+            val aliceLogins = AuthnzAccountIdentifiers.selectAll()
+                .where { AuthnzAccountIdentifiers.userId eq alice.toJavaUuid() }.map { it[AuthnzAccountIdentifiers.identifier] }
+            assertEquals(listOf("alice@example.com"), aliceLogins)
+            val addressOwner = AuthnzAccountIdentifiers.selectAll()
+                .where { AuthnzAccountIdentifiers.identifier eq personAddress }.single()[AuthnzAccountIdentifiers.userId]
+            assertTrue(addressOwner != alice.toJavaUuid(), "The address gets its own account")
+        }
+        assertEquals(personAddress, OrganizationService.addresses(admin).single().address)
     }
 
     @Test
@@ -284,5 +303,28 @@ class OrganizationServiceTest {
             assertEquals(setOf(organizationWallet, marketWallet.toString()), remaining)
         }
         assertNull(permissionOf(alice, personalWallet.toString()))
+    }
+
+    @Test
+    fun `cleanup removes address logins of persons but keeps their email login`() {
+        transaction(database) {
+            AuthnzUsers.insert { it[id] = alice.toJavaUuid() }
+            AuthnzAccountIdentifiers.insert {
+                it[userId] = alice.toJavaUuid()
+                it[identifier] = "alice@example.com"
+            }
+            AuthnzAccountIdentifiers.insert {
+                it[userId] = alice.toJavaUuid()
+                it[identifier] = address(9)
+            }
+        }
+
+        assertEquals(1, PersonalWalletCleanup.removePersonalAddressLogins())
+
+        transaction(database) {
+            val logins = AuthnzAccountIdentifiers.selectAll()
+                .where { AuthnzAccountIdentifiers.userId eq alice.toJavaUuid() }.map { it[AuthnzAccountIdentifiers.identifier] }
+            assertEquals(listOf("alice@example.com"), logins)
+        }
     }
 }

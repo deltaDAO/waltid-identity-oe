@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 # Build the wallet API image from this repository (run from the repository root):
 #   docker build -f waltid-services/waltid-wallet-api/Dockerfile -t deltadao/wallet-api:<tag> .
 # Uses the Gradle wrapper, so the Gradle version always matches the repository.
@@ -10,8 +12,11 @@ WORKDIR /src
 COPY . .
 # Enough heap for the large monorepo build, without a long-running daemon
 ENV GRADLE_OPTS="-Xmx4g -Xms512m"
-RUN chmod +x gradlew && \
-    ./gradlew :waltid-services:waltid-wallet-api:installDist --no-daemon
+# The cache mount keeps Gradle, all downloaded libraries and the Gradle build cache between image builds,
+# so later builds only recompile what changed (needs BuildKit, the default in current Docker)
+RUN --mount=type=cache,target=/root/.gradle \
+    chmod +x gradlew && \
+    ./gradlew :waltid-services:waltid-wallet-api:installDist --no-daemon --build-cache
 
 # Stage 2: Runtime image
 FROM eclipse-temurin:21-jre AS runtime

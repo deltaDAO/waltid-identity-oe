@@ -83,6 +83,26 @@ object OrganizationService {
 
     private fun now() = Clock.System.now().toJavaInstant()
 
+    private fun shortAddress(address: String) =
+        if (address.length > 12) "${address.take(6)}…${address.takeLast(4)}" else address
+
+    /** Name shown in the wallet and in the market's wallet selection: the organization, not a person */
+    private fun organizationWalletName(organizationName: String, address: String) =
+        "$organizationName (${shortAddress(address)})".take(128)
+
+    private fun renameWallet(wallet: UUID, name: String) = transaction {
+        Wallets.update({ Wallets.id eq wallet }) { it[Wallets.name] = name }
+    }
+
+    /** Names all organization wallets after their organization (e.g. wallets added before this naming existed) */
+    fun renameOrganizationWallets() = transaction {
+        OrganizationAddresses.selectAll().forEach { row ->
+            val organizationName = Organizations.selectAll()
+                .where { Organizations.id eq row[OrganizationAddresses.organization] }.single()[Organizations.name]
+            renameWallet(row[OrganizationAddresses.wallet].value, organizationWalletName(organizationName, row[OrganizationAddresses.address]))
+        }
+    }
+
     // --- Membership ---
 
     private fun membershipOf(account: Uuid) = transaction {
@@ -353,10 +373,21 @@ object OrganizationService {
                 .where { AuthnzAccountIdentifiers.identifier eq identifier }
                 .singleOrNull()?.get(AuthnzAccountIdentifiers.userId)?.toKotlinUuid()
 
-            if (known != null) {
-                val account = Accounts.selectAll().where { Accounts.id eq known }.singleOrNull()
-                if (account?.get(Accounts.email) != null || membershipOf(known) != null)
-                    throw ConflictException("This address is the login of a person's account and cannot become an organization address.")
+            val isPerson = known != null && (
+                    Accounts.selectAll().where { Accounts.id eq known }.singleOrNull()?.get(Accounts.email) != null ||
+                            membershipOf(known) != null)
+
+            if (known != null && isPerson) {
+                // A person logs in with their email; the address was only linked as an extra market login.
+                // It becomes an organization address: unlink it from the person, who keeps their own login.
+                val personLogins = AuthnzAccountIdentifiers.selectAll()
+                    .where { AuthnzAccountIdentifiers.userId eq known.toJavaUuid() }.count()
+                if (personLogins <= 1)
+                    throw ConflictException("This address is the only login of a member's account and cannot become an organization address.")
+                AuthnzAccountIdentifiers.deleteWhere { AuthnzAccountIdentifiers.identifier eq identifier }
+            }
+
+            if (known != null && !isPerson) {
                 known
             } else {
                 val newAccount = Uuid.random()
@@ -379,6 +410,8 @@ object OrganizationService {
         val wallet = ownWalletOf(addressAccount) ?: createWallet(addressAccount, identifier)
 
         transaction {
+            val organizationName = Organizations.selectAll().where { Organizations.id eq organization }.single()[Organizations.name]
+            renameWallet(wallet.toJavaUuid(), organizationWalletName(organizationName, identifier))
             OrganizationAddresses.insert {
                 it[OrganizationAddresses.address] = identifier
                 it[OrganizationAddresses.organization] = organization
@@ -400,6 +433,8 @@ object OrganizationService {
             AccountWalletMappings.deleteWhere {
                 (AccountWalletMappings.wallet eq wallet) and (accountId neq row[OrganizationAddresses.account])
             }
+            // No longer an organization wallet
+            renameWallet(wallet, "Wallet of ${row[OrganizationAddresses.address]}")
             OrganizationAddresses.deleteWhere { OrganizationAddresses.address eq row[OrganizationAddresses.address] }
         }
     }

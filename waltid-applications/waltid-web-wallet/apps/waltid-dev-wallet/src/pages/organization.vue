@@ -143,27 +143,6 @@
       </section>
     </div>
 
-    <!-- Every member: own addresses for the Enterprise market login -->
-    <section v-if="organization && organization.status === 'ACTIVE'" class="space-y-2 mt-10">
-      <h2 class="text-lg font-semibold">Your market addresses</h2>
-      <p class="text-sm text-gray-600">
-        Log into the Enterprise market with one of these addresses to use the organization wallets you have access to.
-        Your account itself holds no DIDs or credentials: you only see the wallets your admins share with you.
-      </p>
-      <button class="inline-flex items-center rounded-md bg-blue-500 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-600" type="button" @click="addMyAddress">
-        <PlusIcon aria-hidden="true" class="-ml-0.5 mr-1.5 h-5 w-5" />
-        Add my address
-      </button>
-      <p v-if="myAddresses && myAddresses.length === 0" class="text-sm font-semibold mt-2">No market addresses yet</p>
-      <ul v-else class="divide-y divide-gray-100 border rounded-2xl mt-2 px-2" role="list">
-        <li v-for="entry in myAddresses" :key="entry.address" class="flex flex-wrap items-center justify-between gap-3 py-3">
-          <span class="font-mono text-sm break-all">{{ entry.address }}</span>
-          <button class="rounded-md bg-red-500 px-2.5 py-1.5 text-sm font-semibold text-white hover:bg-red-600" type="button" @click="removeMyAddress(entry)">
-            Remove
-          </button>
-        </li>
-      </ul>
-    </section>
 
     <p v-if="errorMessage" class="mt-4 text-sm text-red-600" role="alert">{{ errorMessage }}</p>
   </CenterMain>
@@ -185,7 +164,6 @@ const errorMessage = ref(null);
 const organization = ref(null);
 const members = ref([]);
 const addresses = ref([]);
-const myAddresses = ref([]);
 const copied = ref(false);
 
 const newName = ref("");
@@ -207,9 +185,6 @@ async function load() {
   errorMessage.value = null;
   try {
     organization.value = (await $fetch("/wallet-api/organization")).organization;
-    if (organization.value?.status === "ACTIVE") {
-      myAddresses.value = await $fetch("/wallet-api/auth/login-addresses");
-    }
     if (organization.value?.role === "ADMIN" && organization.value?.status === "ACTIVE") {
       [members.value, addresses.value] = await Promise.all([
         $fetch("/wallet-api/organization/members"),
@@ -282,23 +257,6 @@ function addAddress() {
       callback: () => load(),
     },
   });
-}
-
-function addMyAddress() {
-  modalStore.openModal({
-    component: LinkAddressModal,
-    props: {
-      postUrl: "/wallet-api/auth/login-addresses",
-      title: "Add your market address",
-      description: "Logging into the Enterprise market with this address then opens the organization wallets you have access to.",
-      callback: () => load(),
-    },
-  });
-}
-
-function removeMyAddress(entry) {
-  if (!confirm(`Remove ${entry.address}? Logging into the market with it will no longer open your organization wallets.`)) return;
-  return run(() => $fetch(`/wallet-api/auth/login-addresses/${entry.address}`, { method: "DELETE" }), "Could not remove the address.");
 }
 
 async function copyInviteLink() {

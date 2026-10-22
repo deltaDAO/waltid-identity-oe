@@ -7,7 +7,6 @@ import id.walt.ktorauthnz.methods.Web3
 import id.walt.webwallet.db.models.OrganizationRole
 import id.walt.webwallet.service.organization.*
 import id.walt.webwallet.service.organization.OrganizationService.LinkResult
-import id.walt.webwallet.web.controllers.auth.LoginAddress
 import id.walt.webwallet.web.plugins.KTOR_AUTHNZ_CONFIG_NAME
 import io.github.smiley4.ktoropenapi.delete
 import io.github.smiley4.ktoropenapi.get
@@ -34,6 +33,9 @@ data class JoinOrganizationRequest(val inviteCode: String? = null, val name: Str
 
 @Serializable
 data class SetRoleRequest(val role: OrganizationRole)
+
+@Serializable
+data class AddedAddress(val address: String)
 
 private suspend fun ApplicationCall.accountUuid(): Uuid = Uuid.parse(getAuthenticatedAccount())
 private fun ApplicationCall.memberParam(): Uuid = Uuid.parse(parameters.getOrFail("accountId"))
@@ -116,15 +118,15 @@ fun Application.organizationRoutes() {
                         description = "Sign the challenge from GET /wallet-api/auth/account/web3/nonce with the address (personal_sign)."
                         request { body<Web3.SiweRequest> { required = true } }
                         response {
-                            HttpStatusCode.Created to { body<LoginAddress>() }
-                            HttpStatusCode.OK to { description = "Already added"; body<LoginAddress>() }
+                            HttpStatusCode.Created to { body<AddedAddress>() }
+                            HttpStatusCode.OK to { description = "Already added"; body<AddedAddress>() }
                             HttpStatusCode.Conflict to { description = "Address belongs to another organization or a person" }
                         }
                     }) {
                         val req = call.receive<Web3.SiweRequest>()
                         val (address, result) = OrganizationService.linkAddress(call.accountUuid(), req)
                         val status = if (result == LinkResult.CREATED) HttpStatusCode.Created else HttpStatusCode.OK
-                        call.respond(status, LoginAddress(address))
+                        call.respond(status, AddedAddress(address))
                     }
                     delete("{address}", { summary = "Remove an address from the organization" }) {
                         OrganizationService.unlinkAddress(call.accountUuid(), call.parameters.getOrFail("address"))

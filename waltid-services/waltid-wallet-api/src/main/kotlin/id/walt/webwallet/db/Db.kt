@@ -11,6 +11,7 @@ import id.walt.webwallet.db.models.authnz.AuthnzAccountIdentifiers
 import id.walt.webwallet.db.models.authnz.AuthnzStoredData
 import id.walt.webwallet.db.models.authnz.AuthnzUsers
 import id.walt.webwallet.service.account.authnz.AuthenticationService
+import id.walt.webwallet.service.organization.OrganizationService
 import id.walt.webwallet.service.organization.PersonalWalletCleanup
 import id.walt.webwallet.service.account.AccountsService
 import id.walt.webwallet.web.model.EmailAccountRequest
@@ -142,6 +143,7 @@ object Db {
 
         // Wallets belong to organizations only: removes old personal wallets when explicitly requested
         PersonalWalletCleanup.runIfRequested()
+        OrganizationService.renameOrganizationWallets()
     }
 
     private fun toTransactionIsolationLevel(value: String): Int = when (value) {
