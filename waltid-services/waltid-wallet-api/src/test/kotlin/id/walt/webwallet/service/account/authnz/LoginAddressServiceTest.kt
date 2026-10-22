@@ -1,9 +1,12 @@
+@file:OptIn(ExperimentalUuidApi::class)
+
 package id.walt.webwallet.service.account.authnz
 
 import id.walt.commons.web.ConflictException
 import id.walt.crypto.keys.KeyType
 import id.walt.crypto.keys.jwk.JWKKey
 import id.walt.ktorauthnz.methods.Web3
+import id.walt.webwallet.db.models.*
 import id.walt.webwallet.db.models.authnz.AuthnzAccountIdentifiers
 import id.walt.webwallet.db.models.authnz.AuthnzStoredData
 import id.walt.webwallet.db.models.authnz.AuthnzUsers
@@ -30,6 +33,8 @@ import org.web3j.crypto.Sign
 import org.web3j.utils.Numeric
 import java.io.File
 import java.util.*
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.toKotlinUuid
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
@@ -39,6 +44,11 @@ class LoginAddressServiceTest {
 
     private lateinit var database: Database
     private val testDbFile = File.createTempFile("login_address_test_", ".db")
+
+    private val tables = arrayOf(
+        Accounts, Wallets, AccountWalletMappings, AuthnzUsers, AuthnzAccountIdentifiers, AuthnzStoredData,
+        Organizations, OrganizationMembers, OrganizationAddresses,
+    )
 
     private val emailAccount = UUID.randomUUID()
     private val otherAccount = UUID.randomUUID()
@@ -55,8 +65,8 @@ class LoginAddressServiceTest {
     @BeforeEach
     fun setUp() {
         transaction(database) {
-            SchemaUtils.drop(AuthnzStoredData, AuthnzAccountIdentifiers, AuthnzUsers)
-            SchemaUtils.create(AuthnzUsers, AuthnzAccountIdentifiers, AuthnzStoredData)
+            SchemaUtils.drop(*tables.reversedArray())
+            SchemaUtils.create(*tables)
 
             // An email account, and another account (e.g. auto-registered by a previous market login)
             AuthnzUsers.insert { it[id] = emailAccount }
@@ -71,7 +81,7 @@ class LoginAddressServiceTest {
     @AfterAll
     fun tearDown() {
         transaction(database) {
-            SchemaUtils.drop(AuthnzStoredData, AuthnzAccountIdentifiers, AuthnzUsers)
+            SchemaUtils.drop(*tables.reversedArray())
         }
         TransactionManager.closeAndUnregister(database)
         testDbFile.delete()
@@ -97,7 +107,7 @@ class LoginAddressServiceTest {
     }
 
     @Test
-    fun `link adds the recovered lowercase address to the account`() = runBlocking {
+    fun `link adds the recovered lowercase address to the account`() = runBlocking<Unit> {
         val keyPair = Keys.createEcKeyPair()
         // Checksummed (mixed case) address, as wallets usually send it
         val checksummed = Keys.toChecksumAddress(keyPair.address())
@@ -111,7 +121,7 @@ class LoginAddressServiceTest {
     }
 
     @Test
-    fun `linking the same address twice is idempotent`() = runBlocking {
+    fun `linking the same address twice is idempotent`() = runBlocking<Unit> {
         val keyPair = Keys.createEcKeyPair()
 
         assertEquals(LinkResult.CREATED, LoginAddressService.link(emailAccount, signedRequest(keyPair)).second)
@@ -121,9 +131,39 @@ class LoginAddressServiceTest {
     }
 
     @Test
-    fun `linking an address that belongs to another account is refused and changes nothing`() = runBlocking {
+    fun `an address whose market account is empty moves to this account`() = runBlocking<Unit> {
+        val keyPair = Keys.createEcKeyPair()
+        // Earlier market login: account with only this address, no wallet
+        LoginAddressService.linkVerifiedAddress(otherAccount, keyPair.address())
+
+        val (_, result) = LoginAddressService.link(emailAccount, signedRequest(keyPair))
+
+        assertEquals(LinkResult.CREATED, result)
+        assertEquals(listOf(keyPair.address()), LoginAddressService.list(emailAccount))
+        assertEquals(emptyList<String>(), identifiersOf(otherAccount))
+        transaction(database) {
+            assertTrue(AuthnzUsers.selectAll().where { AuthnzUsers.id eq otherAccount }.empty(), "Empty account is removed")
+        }
+    }
+
+    @Test
+    fun `linking an address that has its own wallet is refused and changes nothing`() = runBlocking<Unit> {
         val keyPair = Keys.createEcKeyPair()
         LoginAddressService.linkVerifiedAddress(otherAccount, keyPair.address())
+        // The other account owns a wallet
+        transaction(database) {
+            val wallet = Wallets.insert {
+                it[name] = "Wallet of ${keyPair.address()}"
+                it[createdOn] = java.time.Instant.now()
+            }[Wallets.id].value
+            AccountWalletMappings.insert {
+                it[tenant] = ""
+                it[accountId] = otherAccount.toKotlinUuid()
+                it[AccountWalletMappings.wallet] = wallet
+                it[permissions] = AccountWalletPermissions.ADMINISTRATE
+                it[addedOn] = java.time.Instant.now()
+            }
+        }
 
         assertFailsWith<ConflictException> {
             LoginAddressService.link(emailAccount, signedRequest(keyPair))
@@ -134,7 +174,7 @@ class LoginAddressServiceTest {
     }
 
     @Test
-    fun `signature from a different key is rejected`() = runBlocking {
+    fun `signature from a different key is rejected`() = runBlocking<Unit> {
         val victim = Keys.createEcKeyPair()
         val attacker = Keys.createEcKeyPair()
 
@@ -146,7 +186,7 @@ class LoginAddressServiceTest {
     }
 
     @Test
-    fun `challenge not issued by the wallet is rejected`() = runBlocking {
+    fun `challenge not issued by the wallet is rejected`() = runBlocking<Unit> {
         val keyPair = Keys.createEcKeyPair()
 
         // Well-formed nonce, but signed by some other key instead of the wallet's nonce key
@@ -163,7 +203,7 @@ class LoginAddressServiceTest {
     }
 
     @Test
-    fun `list only returns web3 addresses of the account`() = runBlocking {
+    fun `list only returns web3 addresses of the account`() = runBlocking<Unit> {
         val mine = Keys.createEcKeyPair().address()
         val theirs = Keys.createEcKeyPair().address()
         LoginAddressService.linkVerifiedAddress(emailAccount, mine)
@@ -174,7 +214,7 @@ class LoginAddressServiceTest {
     }
 
     @Test
-    fun `unlink removes own address and keeps the email login`() = runBlocking {
+    fun `unlink removes own address and keeps the email login`() = runBlocking<Unit> {
         val address = Keys.createEcKeyPair().address()
         LoginAddressService.linkVerifiedAddress(emailAccount, address)
 
@@ -185,7 +225,7 @@ class LoginAddressServiceTest {
     }
 
     @Test
-    fun `unlink of another account's address is not found`() = runBlocking {
+    fun `unlink of another account's address is not found`() = runBlocking<Unit> {
         val address = Keys.createEcKeyPair().address()
         LoginAddressService.linkVerifiedAddress(otherAccount, address)
         // Give the other account a second login, so only ownership decides
@@ -196,7 +236,7 @@ class LoginAddressServiceTest {
     }
 
     @Test
-    fun `unlink of the last login of an account is refused`() = runBlocking {
+    fun `unlink of the last login of an account is refused`() = runBlocking<Unit> {
         val address = Keys.createEcKeyPair().address()
         LoginAddressService.linkVerifiedAddress(otherAccount, address)
 

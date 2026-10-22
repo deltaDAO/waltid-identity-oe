@@ -1,5 +1,7 @@
 package id.walt.webwallet.web.controllers.exchange
 
+import id.walt.webwallet.db.models.AccountWalletPermissions
+import id.walt.webwallet.web.controllers.auth.ensurePermissionsForWallet
 import id.walt.oid4vc.OpenID4VCI
 import id.walt.oid4vc.data.OpenIDProviderMetadataSerializer
 import id.walt.oid4vc.data.dif.PresentationDefinition
@@ -104,6 +106,8 @@ fun Application.exchange() = walletRoute {
         }
 
         post("usePresentationRequest", getUsePresentationRequestDocs()) {
+            // Presenting credentials (e.g. the credential check before buying in the market) needs at least USE
+            call.ensurePermissionsForWallet(AccountWalletPermissions.USE)
             val wallet = call.getWalletService()
 
             val req = call.receive<UsePresentationRequest>()
