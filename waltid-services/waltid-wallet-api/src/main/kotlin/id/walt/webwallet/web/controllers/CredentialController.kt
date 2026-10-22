@@ -94,6 +94,8 @@ fun Application.credentials() = walletRoute {
                 HttpStatusCode.Conflict to { description = "Credential already exists" }
             }
         }) {
+            // Only admins of the wallet add credentials; members only view and present them
+            call.ensurePermissionsForWallet(AccountWalletPermissions.ADMINISTRATE)
             val req = call.receive<CredentialImportRequest>()
             runCatching {
                 call.getWalletService().importCredential(req.jwt, req.associated_did)
@@ -162,6 +164,8 @@ fun Application.credentials() = walletRoute {
                     HttpStatusCode.BadRequest to { description = "WalletCredential could not be restored" }
                 }
             }) {
+                // Only admins of the wallet add credentials; members only view and present them
+                call.ensurePermissionsForWallet(AccountWalletPermissions.ADMINISTRATE)
                 val credentialId = call.parameters.getOrFail("credentialId")
                 runCatching { call.getWalletService().restoreCredential(credentialId) }.onSuccess {
                     call.respond(HttpStatusCode.OK, it)
@@ -176,6 +180,8 @@ fun Application.credentials() = walletRoute {
                     HttpStatusCode.BadRequest to { description = "Credential acceptance failed" }
                 }
             }) {
+                // Only admins of the wallet add credentials; members only view and present them
+                call.ensurePermissionsForWallet(AccountWalletPermissions.ADMINISTRATE)
                 val credentialId = call.parameters.getOrFail("credentialId")
                 runCatching { call.getWalletService().acceptCredential(CredentialRequestParameter(credentialId)) }.onSuccess {
                     if (it) call.respond(HttpStatusCode.Accepted) else call.respond(HttpStatusCode.BadRequest)
@@ -197,6 +203,8 @@ fun Application.credentials() = walletRoute {
                     HttpStatusCode.BadRequest to { description = "Credential rejection failed" }
                 }
             }) {
+                // Only admins of the wallet add credentials; members only view and present them
+                call.ensurePermissionsForWallet(AccountWalletPermissions.ADMINISTRATE)
                 val credentialId = call.parameters.getOrFail("credentialId")
                 val requestParameter = call.receiveNullable<NoteRequestParameter>()
                 runCatching {

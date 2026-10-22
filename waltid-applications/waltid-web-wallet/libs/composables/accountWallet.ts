@@ -1,5 +1,5 @@
 import {navigateTo, useFetch, useRoute, useState} from "nuxt/app";
-import {computed} from "vue";
+import {computed, watch} from "vue";
 
 export type WalletListing = {
     id: string,
@@ -45,14 +45,27 @@ export function useCurrentWallet() {
     });
 }
 
+/** Permission of the logged-in account on the current wallet (undefined while loading) */
+export function useWalletPermission() {
+    const currentWallet = useCurrentWallet();
+    const { data } = useFetch<WalletListings>("/wallet-api/wallet/accounts/wallets", { key: "account-wallets" });
+    return computed(() => data.value?.wallets?.find((wallet) => wallet.id === currentWallet.value)?.permission);
+}
+
 /**
  * Whether the logged-in account is an admin (ADMINISTRATE) of the current wallet.
- * Only admins may create, import or delete keys, DIDs and credentials; members only use the wallet.
+ * Only admins see keys and DIDs and add credentials; members view and present credentials.
  */
-export async function useIsWalletAdmin() {
+export function useIsWalletAdmin() {
+    const permission = useWalletPermission();
+    return computed(() => permission.value === "ADMINISTRATE");
+}
+
+/** For admin-only wallet pages: members are sent to the wallet's credentials */
+export function requireWalletAdmin() {
+    const permission = useWalletPermission();
     const currentWallet = useCurrentWallet();
-    const { data } = await useFetch<WalletListings>("/wallet-api/wallet/accounts/wallets");
-    return computed(() =>
-        data.value?.wallets?.find((wallet) => wallet.id === currentWallet.value)?.permission === "ADMINISTRATE"
-    );
+    watch(permission, (value) => {
+        if (value && value !== "ADMINISTRATE") navigateTo(`/wallet/${currentWallet.value}`);
+    }, { immediate: true });
 }

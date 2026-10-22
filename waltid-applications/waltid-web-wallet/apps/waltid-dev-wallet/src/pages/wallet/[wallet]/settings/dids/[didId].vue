@@ -88,6 +88,7 @@
 </template>
 
 <script lang="ts" setup>
+import {requireWalletAdmin} from "@waltid-web-wallet/composables/accountWallet.ts";
 import {useIsWalletAdmin} from "@waltid-web-wallet/composables/accountWallet.ts";
 import LoadingIndicator from "@waltid-web-wallet/components/loading/LoadingIndicator.vue";
 import QrcodeVue from "qrcode.vue";
@@ -95,6 +96,9 @@ import CenterMain from "@waltid-web-wallet/components/CenterMain.vue";
 import BackButton from "@waltid-web-wallet/components/buttons/BackButton.vue";
 import {useCurrentWallet} from "@waltid-web-wallet/composables/accountWallet.ts";
 import {TagIcon, TrashIcon} from "@heroicons/vue/24/outline";
+
+// Admins only: members are sent back to the wallet's credentials
+requireWalletAdmin();
 
 // Only admins of the wallet see the buttons that create, import or delete keys, DIDs and credentials
 const isWalletAdmin = await useIsWalletAdmin();

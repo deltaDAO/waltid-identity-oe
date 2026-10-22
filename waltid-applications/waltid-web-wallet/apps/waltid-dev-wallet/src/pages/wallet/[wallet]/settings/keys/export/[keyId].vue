@@ -58,11 +58,15 @@
 </template>
 
 <script lang="ts" setup>
+import {requireWalletAdmin} from "@waltid-web-wallet/composables/accountWallet.ts";
 import CenterMain from "@waltid-web-wallet/components/CenterMain.vue";
 import BackButton from "@waltid-web-wallet/components/buttons/BackButton.vue";
 import {useCurrentWallet} from "@waltid-web-wallet/composables/accountWallet.ts";
 import {ExclamationTriangleIcon} from "@heroicons/vue/24/outline";
 import QrcodeVue from "qrcode.vue";
+
+// Admins only: members are sent back to the wallet's credentials
+requireWalletAdmin();
 
 const route = useRoute();
 

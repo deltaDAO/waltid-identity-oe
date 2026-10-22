@@ -41,6 +41,8 @@ fun Application.exchange() = walletRoute {
     route(ExchangeOpenApiCommons.EXCHANGE_ROOT_PATH, ExchangeOpenApiCommons.exchangeRoute()) {
 
         post("useOfferRequest", getUseOfferRequestDocs()) {
+            // Only admins of the wallet add credentials; members only view and present them
+            call.ensurePermissionsForWallet(AccountWalletPermissions.ADMINISTRATE)
             val wallet = call.getWalletService()
 
             val did = call.request.queryParameters["did"]

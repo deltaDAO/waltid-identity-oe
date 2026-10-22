@@ -118,10 +118,14 @@
 </template>
 
 <script lang="ts" setup>
+import {requireWalletAdmin} from "@waltid-web-wallet/composables/accountWallet.ts";
 import CenterMain from "@waltid-web-wallet/components/CenterMain.vue";
 import {ArrowUturnLeftIcon, CheckIcon, KeyIcon} from "@heroicons/vue/24/outline";
 import {useCurrentWallet} from "@waltid-web-wallet/composables/accountWallet.ts";
 import InlineLoadingCircle from "@waltid-web-wallet/components/loading/InlineLoadingCircle.vue";
+
+// Admins only: members are sent back to the wallet's credentials
+requireWalletAdmin();
 
 const loading = ref(false);
 const response = ref("");

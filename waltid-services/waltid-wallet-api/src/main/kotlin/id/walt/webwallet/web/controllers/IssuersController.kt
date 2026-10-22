@@ -2,6 +2,8 @@
 
 package id.walt.webwallet.web.controllers
 
+import id.walt.webwallet.db.models.AccountWalletPermissions
+import id.walt.webwallet.web.controllers.auth.ensurePermissionsForWallet
 import id.walt.webwallet.service.WalletServiceManager
 import id.walt.webwallet.service.issuers.CredentialDataTransferObject
 import id.walt.webwallet.service.issuers.IssuerDataTransferObject
@@ -46,6 +48,8 @@ fun Application.issuers() = walletRoute {
                 HttpStatusCode.BadRequest to { description = "Failed to add issuer to wallet" }
             }
         }) {
+            // Only admins of the wallet add credentials; members only view and present them
+            call.ensurePermissionsForWallet(AccountWalletPermissions.ADMINISTRATE)
             val issuer = call.receive<IssuerParameter>()
             WalletServiceManager.issuerUseCase.add(
                 IssuerDataTransferObject(

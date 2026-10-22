@@ -66,9 +66,13 @@
 </template>
 
 <script setup>
+import {requireWalletAdmin} from "@waltid-web-wallet/composables/accountWallet.ts";
 import {useIsWalletAdmin} from "@waltid-web-wallet/composables/accountWallet.ts";
 import {useCurrentWallet} from "@waltid-web-wallet/composables/accountWallet.ts";
 import CenterMain from "@waltid-web-wallet/components/CenterMain.vue";
+
+// Admins only: members are sent back to the wallet's credentials
+requireWalletAdmin();
 
 // Only admins of the wallet see the buttons that create, import or delete keys, DIDs and credentials
 const isWalletAdmin = await useIsWalletAdmin();

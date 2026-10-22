@@ -64,9 +64,13 @@
 </template>
 
 <script setup>
+import {requireWalletAdmin} from "@waltid-web-wallet/composables/accountWallet.ts";
 import WalletPageHeader from "@waltid-web-wallet/components/WalletPageHeader.vue";
 import CenterMain from "@waltid-web-wallet/components/CenterMain.vue";
 import {useCurrentWallet} from "@waltid-web-wallet/composables/accountWallet.ts";
+
+// Admins only: members are sent back to the wallet's credentials
+requireWalletAdmin();
 
 const currentWallet = useCurrentWallet();
 

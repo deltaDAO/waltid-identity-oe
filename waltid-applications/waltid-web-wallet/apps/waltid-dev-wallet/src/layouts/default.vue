@@ -84,7 +84,7 @@
                 <div class="space-y-1 px-2">
                   <div v-for="navItem in navigation">
                     <NuxtLink
-                      v-for="item in navItem.items"
+                      v-for="item in navItem.items.filter((i) => !i.adminOnly || isWalletAdmin)"
                       :key="item.name"
                       :to="item.href"
                       class="hover:bg-blue-700 text-white group flex items-center rounded-md px-2 py-2 text-base font-medium"
@@ -144,7 +144,7 @@
             <div v-for="navItem in navigation" class="pb-3">
               <p class="font-semibold text-white">{{ navItem.name }}</p>
               <NuxtLink
-                v-for="item in navItem.items"
+                v-for="item in navItem.items.filter((i) => !i.adminOnly || isWalletAdmin)"
                 :key="item.name"
                 :to="item.href"
                 class="hover:bg-blue-700 text-white group flex items-center rounded-md px-2 py-2 text-base font-medium"
@@ -337,7 +337,7 @@ import {
 import {ChevronDownIcon, MagnifyingGlassIcon} from "@heroicons/vue/20/solid";
 import {useUserStore} from "@waltid-web-wallet/stores/user.ts";
 import {storeToRefs} from "pinia";
-import {useCurrentWallet} from "@waltid-web-wallet/composables/accountWallet.ts";
+import {useCurrentWallet, useIsWalletAdmin} from "@waltid-web-wallet/composables/accountWallet.ts";
 import {useTenant} from "@waltid-web-wallet/composables/tenants.ts";
 import {logout} from "~/composables/authentication";
 
@@ -363,6 +363,8 @@ async function reloadData() {
 }
 
 const currentWallet = useCurrentWallet();
+// Keys and DIDs are for admins of the wallet; members only view and present credentials
+const isWalletAdmin = useIsWalletAdmin();
 
 const navigation = [
   {
@@ -387,11 +389,13 @@ const navigation = [
         name: "DIDs",
         href: `/wallet/${currentWallet.value}/settings/dids`,
         icon: FingerPrintIcon,
+        adminOnly: true,
       },
       {
         name: "Keys",
         href: `/wallet/${currentWallet.value}/settings/keys`,
         icon: KeyIcon,
+        adminOnly: true,
       },
       {
         name: "Event log",

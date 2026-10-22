@@ -220,6 +220,7 @@
 </template>
 
 <script lang="ts" setup>
+import {requireWalletAdmin} from "@waltid-web-wallet/composables/accountWallet.ts";
 import CenterMain from "@waltid-web-wallet/components/CenterMain.vue";
 import PageHeader from "@waltid-web-wallet/components/PageHeader.vue";
 import CredentialIcon from "@waltid-web-wallet/components/CredentialIcon.vue";
@@ -230,6 +231,9 @@ import {useIssuance} from "@waltid-web-wallet/composables/issuance.ts";
 import {CheckIcon, ChevronUpDownIcon} from "@heroicons/vue/20/solid";
 import {useTitle} from "@vueuse/core";
 import {ref} from "vue";
+
+// Admins only: members are sent back to the wallet's credentials
+requireWalletAdmin();
 
 const query = useRoute().query;
 const immediateAccept = ref(false);

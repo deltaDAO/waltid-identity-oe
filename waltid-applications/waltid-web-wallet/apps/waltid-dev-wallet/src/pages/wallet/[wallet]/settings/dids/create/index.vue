@@ -40,7 +40,11 @@
 </template>
 
 <script lang="ts" setup>
+import {requireWalletAdmin} from "@waltid-web-wallet/composables/accountWallet.ts";
 import CenterMain from "@waltid-web-wallet/components/CenterMain.vue";
+
+// Admins only: members are sent back to the wallet's credentials
+requireWalletAdmin();
 
 const methods = new Map([
   ["key", ["useJwkJcsPub"]],
