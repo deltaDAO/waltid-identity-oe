@@ -66,6 +66,7 @@
           </span>
         </button>
       </div>
+      <p v-if="deleteError" class="mt-2 text-sm text-red-600 text-right" role="alert">{{ deleteError }}</p>
     </div>
 
     <div class="mt-6 border p-4 rounded-2xl">
@@ -185,7 +186,13 @@ const meta = ref<any | null>(null);
 const aliasName = ref<string | null>(null);
 
 const displayKid = computed(() => jwk.value?.kid || keyId);
-const formattedJwk = computed(() => (jwk.value ? JSON.stringify(jwk.value, null, 2) : "Loading…"));
+// Only show the public part: the loaded key contains the private key ("d" etc.)
+const PRIVATE_JWK_MEMBERS = ["d", "p", "q", "dp", "dq", "qi", "oth", "k"];
+const publicJwk = computed(() =>
+    jwk.value ? Object.fromEntries(Object.entries(jwk.value).filter(([k]) => !PRIVATE_JWK_MEMBERS.includes(k))) : null
+);
+const formattedJwk = computed(() => (publicJwk.value ? JSON.stringify(publicJwk.value, null, 2) : "Loading…"));
+const deleteError = ref<string | null>(null);
 
 async function loadData() {
     try {
@@ -216,11 +223,14 @@ function exportKey() {
 }
 
 async function deleteKey() {
-  await $fetch(`/wallet-api/wallet/${currentWallet.value}/keys/${keyId}`, {
-    method: "DELETE",
-  }).finally(() => {
-    navigateTo(`/wallet/${currentWallet.value}/settings/keys`);
-  });
+  deleteError.value = null;
+  if (!confirm("Delete this key permanently?")) return;
+  try {
+    await $fetch(`/wallet-api/wallet/${currentWallet.value}/keys/${keyId}`, { method: "DELETE" });
+    await navigateTo(`/wallet/${currentWallet.value}/settings/keys`);
+  } catch (err: any) {
+    deleteError.value = err?.data?.message || "The key could not be deleted.";
+  }
 }
 
 useHead({

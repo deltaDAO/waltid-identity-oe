@@ -29,20 +29,20 @@
 
         <template v-slot:menu v-if="currentWallet">
             <NuxtLink
-                class="inline-flex focus:outline focus:outline-blue-600 focus:outline-offset-2 items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                class="inline-flex whitespace-nowrap focus:outline focus:outline-blue-600 focus:outline-offset-2 items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
                 :to="`/wallet/${currentWallet}/settings/issuers`" type="button" v-if="currentWallet">
                 <ArrowDownOnSquareStackIcon class="h-5 w-5 mr-1"/>
                 Request credentials
             </NuxtLink>
             <NuxtLink
-                class="inline-flex focus:outline focus:outline-blue-600 focus:outline-offset-2 items-center rounded-md bg-blue-500 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                class="inline-flex whitespace-nowrap focus:outline focus:outline-blue-600 focus:outline-offset-2 items-center rounded-md bg-blue-500 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
                 :to="`/wallet/${currentWallet}/scan`" type="button">
                 <QrCodeIcon class="h-5 w-5 mr-1"/>
                 Scan to receive or present credentials
             </NuxtLink>
             <NuxtLink
 
-                class="inline-flex items-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+                class="inline-flex whitespace-nowrap items-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
                 :to="`/wallet/${currentWallet}/import`"
                 type="button"
             >

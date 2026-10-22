@@ -730,6 +730,12 @@ class SSIKit2WalletService(
 
 
     private suspend fun performKeyDelete(alias: String, isTotalDelete: Boolean) = runCatching {
+        // DIDs reference their key (foreign key), so the key row cannot be deleted while a DID still uses it
+        val didsUsingKey = DidsService.list(walletId).filter { it.keyId == alias }.map { it.did }
+        if (didsUsingKey.isNotEmpty()) throw ConflictException(
+            "This key is used by ${didsUsingKey.joinToString()}. Delete that DID first, then delete the key."
+        )
+
         val key = getKey(alias)
 
         val canDeleteFromStorage = isTotalDelete && key.deleteKey() || !isTotalDelete

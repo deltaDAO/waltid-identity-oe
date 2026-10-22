@@ -42,6 +42,7 @@
               </span>
             </button>
           </div>
+          <p v-if="deleteError" class="mt-2 text-sm text-red-600 text-right" role="alert">{{ deleteError }}</p>
           <div class="mt-2 flex items-center justify-end gap-x-6">
             <button
               class="inline-flex justify-center bg-gray-600 hover:bg-gray-400 focus-visible:outline-gray-700 rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
@@ -110,12 +111,17 @@ const {
 );
 refreshNuxtData();
 
+const deleteError = ref<string | null>(null);
+
 async function deleteDid() {
-  await $fetch(`/wallet-api/wallet/${currentWallet.value}/dids/${didId}`, {
-    method: "DELETE",
-  }).finally(() => {
-    navigateTo(`/wallet/${currentWallet.value}/settings/dids`);
-  });
+  deleteError.value = null;
+  if (!confirm("Delete this DID permanently?")) return;
+  try {
+    await $fetch(`/wallet-api/wallet/${currentWallet.value}/dids/${didId}`, { method: "DELETE" });
+    await navigateTo(`/wallet/${currentWallet.value}/settings/dids`);
+  } catch (err: any) {
+    deleteError.value = err?.data?.message || "The DID could not be deleted.";
+  }
 }
 
 async function setDefault() {
