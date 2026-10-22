@@ -82,7 +82,7 @@ class OrganizationServiceTest {
         testDbFile.delete()
     }
 
-    private fun person(email: String?, name: String = email ?: "someone"): Uuid {
+    private fun person(email: String?, name: String = email ?: "someone", createdOn: kotlin.time.Instant = Clock.System.now()): Uuid {
         val id = Uuid.random()
         transaction(database) {
             Accounts.insert {
@@ -90,7 +90,7 @@ class OrganizationServiceTest {
                 it[Accounts.id] = id
                 it[Accounts.name] = name
                 it[Accounts.email] = email
-                it[createdOn] = Clock.System.now().toJavaInstant()
+                it[Accounts.createdOn] = createdOn.toJavaInstant()
             }
         }
         return id
@@ -432,9 +432,17 @@ class OrganizationServiceTest {
     @Test
     fun `the built-in super admin cannot be configured away`() {
         OrganizationService.additionalSuperAdminEmails = { emptySet() }
-        val alex = person("Alex@Delta-DAO.com")
+        val alex = person("alex@delta-dao.com")
         assertTrue(OrganizationService.isSuperAdmin(alex))
         assertTrue(!OrganizationService.isSuperAdmin(superAdmin), "Configured super admins can be removed")
+    }
+
+    @Test
+    fun `a later case variant of a super admin email is not a super admin`() {
+        val alex = person("alex@delta-dao.com")
+        val impostor = person("Alex@Delta-DAO.com", createdOn = Clock.System.now() + kotlin.time.Duration.parse("1m"))
+        assertTrue(OrganizationService.isSuperAdmin(alex))
+        assertTrue(!OrganizationService.isSuperAdmin(impostor))
     }
 
     @Test

@@ -135,7 +135,19 @@ object OrganizationService {
         Accounts.selectAll().where { Accounts.id eq account }.singleOrNull()?.get(Accounts.email)
     }
 
-    fun isSuperAdmin(account: Uuid): Boolean = emailOf(account)?.lowercase()?.let { it in superAdminEmails() } ?: false
+    /**
+     * Super admin = the oldest account with a super admin email (ignoring case). A later account with a case variant
+     * of that email (e.g. "Alex@…") is never a super admin, even if it exists.
+     */
+    fun isSuperAdmin(account: Uuid): Boolean {
+        val email = emailOf(account)?.lowercase() ?: return false
+        if (email !in superAdminEmails()) return false
+        val oldest = transaction {
+            Accounts.selectAll().where { Accounts.email.lowerCase() eq email }
+                .minByOrNull { it[Accounts.createdOn] }?.get(Accounts.id)
+        }
+        return oldest == account
+    }
 
     /** Creates the wallet of an address account and returns its id (default: wallet with key and DID) */
     val defaultCreateWallet: suspend (account: Uuid, name: String) -> Uuid = { account, name ->

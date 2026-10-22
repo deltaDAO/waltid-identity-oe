@@ -31,6 +31,7 @@ import io.ktor.util.date.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.lowerCase
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
@@ -43,10 +44,12 @@ import kotlin.uuid.Uuid
 
 private const val MIN_PASSWORD_LENGTH = 8
 
+// Ignores case: "Alex@…" counts as the same address as "alex@…" (no look-alike accounts)
 private fun emailAlreadyRegistered(email: String) = transaction {
-    Accounts.select(Accounts.id).where { Accounts.email eq email }.any() ||
+    val lowercase = email.lowercase()
+    Accounts.select(Accounts.id).where { Accounts.email.lowerCase() eq lowercase }.any() ||
             AuthnzAccountIdentifiers.select(AuthnzAccountIdentifiers.id)
-                .where { AuthnzAccountIdentifiers.identifier eq email }.any()
+                .where { AuthnzAccountIdentifiers.identifier.lowerCase() eq lowercase }.any()
 }
 
 private suspend fun ktorAuthnzCreateAccount(
