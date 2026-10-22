@@ -118,7 +118,7 @@ fun Application.ktorAuthnzFrontendRoutes() {
         }) {
             authenticate(KTOR_AUTHNZ_CONFIG_NAME) {
                 get("user-info", {
-                    summary = "Return user ID if logged in"
+                    summary = "Return the account (id, name, email) if logged in"
                     response {
                         HttpStatusCode.OK to {
                             description = "User account"
@@ -126,7 +126,7 @@ fun Application.ktorAuthnzFrontendRoutes() {
                         }
                     }
                 }) {
-                    call.respond(call.getAuthenticatedAccount())
+                    call.respond(AccountsService.get(Uuid.parse(call.getAuthenticatedAccount())))
                 }
                 get("session", { summary = "Return session ID if logged in" }) {
                     val token = getAuthenticatedSession().token ?: throw UnauthorizedException("Invalid session")

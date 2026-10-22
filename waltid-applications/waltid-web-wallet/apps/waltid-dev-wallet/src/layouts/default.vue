@@ -317,7 +317,7 @@
 </template>
 
 <script lang="ts" setup>
-import {ref} from "vue";
+import {onMounted, ref} from "vue";
 import {
     Dialog,
     DialogPanel,
@@ -358,6 +358,7 @@ const logoImg = tenant?.logoImage;
 const inWalletLogoImage = tenant?.inWalletLogoImage;
 
 const userStore = useUserStore();
+onMounted(() => userStore.refreshUser());
 const { user } = storeToRefs(userStore);
 
 const refreshing = ref(false);
