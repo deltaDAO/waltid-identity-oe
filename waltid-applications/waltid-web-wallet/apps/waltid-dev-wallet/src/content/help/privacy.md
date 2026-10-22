@@ -1,3 +1,4 @@
 # Privacy policy
 
-This is **rendered from markdown**.
+- [Privacy policy](https://delta-dao.com/privacy)
+- [Imprint](https://delta-dao.com/imprint)

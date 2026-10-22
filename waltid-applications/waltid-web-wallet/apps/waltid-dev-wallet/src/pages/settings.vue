@@ -1,12 +1,10 @@
 <template>
-    <CenterMain>
-        <h1 class="font-normal">Settings</h1>
-        <p>This is <b>rendered from markdown.</b></p>
-    </CenterMain>
+  <div />
 </template>
 
 <script setup>
+// There are no account settings (yet): send old links to the start page
 definePageMeta({
-    layout: "default-reduced-nav",
-})
+  redirect: "/",
+});
 </script>

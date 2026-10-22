@@ -87,6 +87,7 @@
                       v-for="item in secondaryNavigation"
                       :key="item.name"
                       :to="item.href"
+                      :target="item.external ? '_blank' : undefined"
                       class="group flex items-center rounded-md px-2 py-2 text-base font-medium text-white hover:bg-blue-700 hover:text-white"
                     >
                       <component
@@ -96,17 +97,6 @@
                       />
                       {{ item.name }}
                     </NuxtLink>
-                  </div>
-                  <div
-                    class="absolute left-0 right-0 flex flex-col items-center justify-center bottom-3"
-                  >
-                    <NuxtLink
-                      :to="demoWalletUrl"
-                      class="text-white group text-base font-medium"
-                    >
-                      Switch To Demo Version
-                    </NuxtLink>
-                    <hr class="w-2/3 border-blue-200" />
                   </div>
                 </div>
               </nav>
@@ -139,6 +129,7 @@
                 v-for="item in secondaryNavigation"
                 :key="item.name"
                 :to="item.href"
+                :target="item.external ? '_blank' : undefined"
                 class="group flex items-center rounded-md px-2 py-2 text-base font-medium leading-6 text-white hover:bg-blue-700 hover:text-white"
               >
                 <component
@@ -148,15 +139,6 @@
                 />
                 {{ item.name }}
               </NuxtLink>
-            </div>
-            <div class="flex flex-col items-center justify-center">
-              <NuxtLink
-                :to="demoWalletUrl"
-                class="text-white group text-base font-medium"
-              >
-                Switch To Demo Version
-              </NuxtLink>
-              <hr class="w-2/3 border-blue-200" />
             </div>
           </div>
         </nav>
@@ -306,7 +288,7 @@ import {
     ArrowPathIcon,
     Bars3CenterLeftIcon,
     BellIcon,
-    CogIcon,
+    DocumentTextIcon,
     ListBulletIcon,
     QuestionMarkCircleIcon,
     ShieldCheckIcon,
@@ -318,8 +300,6 @@ import {storeToRefs} from "pinia";
 import {useTenant} from "@waltid-web-wallet/composables/tenants.ts";
 import {logout} from "~/composables/authentication";
 
-const runtimeConfig = useRuntimeConfig();
-const demoWalletUrl = runtimeConfig.public.demoWalletUrl as string;
 
 const tenant = await useTenant().value;
 const name = tenant?.name;
@@ -342,9 +322,9 @@ async function reloadData() {
 
 const secondaryNavigation = [
   { name: "Select wallet", href: "/", icon: ListBulletIcon },
-  { name: "Settings", href: "/settings", icon: CogIcon },
   { name: "Help", href: "/help", icon: QuestionMarkCircleIcon },
-  { name: "Privacy", href: "/help/privacy", icon: ShieldCheckIcon },
+  { name: "Privacy", href: "https://delta-dao.com/privacy", icon: ShieldCheckIcon, external: true },
+  { name: "Imprint", href: "https://delta-dao.com/imprint", icon: DocumentTextIcon, external: true },
 ];
 const statusStyles = {
   success: "bg-green-100 text-green-800",
