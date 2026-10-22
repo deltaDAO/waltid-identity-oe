@@ -1,0 +1,38 @@
+# Test instance of the OE wallet (wallet API + dev wallet frontend) for wallet.test-oe.delta-dao.com.
+# Runs next to other wallet stacks on the same server: own project name, containers, images, ports and database.
+# nginx (see nginx/) routes /wallet-api/ to the wallet API and everything else to the dev wallet.
+name: wallet-test-oe
+
+services:
+  wallet-api-oe:
+    image: deltadao/wallet-api:oe-wallet-signup
+    container_name: wallet-api-oe
+    build:
+      context: ../../
+      dockerfile: waltid-services/waltid-wallet-api/Dockerfile
+    restart: unless-stopped
+    volumes:
+      # Copied from waltid-services/waltid-wallet-api/config on the server (git-ignored, holds pepper and keys)
+      - ./wallet-api-config:/waltid-wallet-api/config:ro
+      # SQLite database (config/db.conf: jdbc:sqlite:data/wallet.db)
+      - wallet-oe-data:/waltid-wallet-api/data
+    ports:
+      - "127.0.0.1:7011:7001"
+
+  dev-wallet-oe:
+    image: deltadao/waltid-dev-wallet:oe-wallet-signup
+    container_name: dev-wallet-oe
+    build:
+      context: ../../
+      dockerfile: waltid-applications/waltid-web-wallet/apps/waltid-dev-wallet/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - wallet-api-oe
+    environment:
+      PORT: "7104"
+      NUXT_PUBLIC_ISSUER_CALLBACK_URL: "https://wallet.test-oe.delta-dao.com"
+    ports:
+      - "127.0.0.1:7114:7104"
+
+volumes:
+  wallet-oe-data:

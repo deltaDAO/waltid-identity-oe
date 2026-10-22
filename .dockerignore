@@ -25,3 +25,6 @@
 #**.jpg
 **/k8s
 .env
+
+# Server-local deployment config (secrets), never part of an image
+deploy/*/wallet-api-config
