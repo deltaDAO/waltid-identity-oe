@@ -332,13 +332,13 @@ import {
     ArrowPathIcon,
     Bars3CenterLeftIcon,
     BellIcon,
+    BuildingOfficeIcon,
     ClipboardDocumentListIcon,
     DocumentTextIcon,
     FingerPrintIcon,
     GlobeAltIcon,
     HomeIcon,
     KeyIcon,
-    LinkIcon,
     ListBulletIcon,
     QuestionMarkCircleIcon,
     ShieldCheckIcon,
@@ -404,11 +404,6 @@ const navigation = [
         icon: KeyIcon,
       },
       {
-        name: "Login addresses",
-        href: `/wallet/${currentWallet.value}/login-addresses`,
-        icon: LinkIcon,
-      },
-      {
         name: "Event log",
         href: `/wallet/${currentWallet.value}/eventlog`,
         icon: ClipboardDocumentListIcon,
@@ -436,6 +431,7 @@ const navigation = [
 ];
 const secondaryNavigation = [
   { name: "Select wallet", href: "/", icon: ListBulletIcon },
+  { name: "Organization", href: "/organization", icon: BuildingOfficeIcon },
   { name: "Help", href: "/help", icon: QuestionMarkCircleIcon },
   { name: "Privacy", href: "https://delta-dao.com/privacy", icon: ShieldCheckIcon, external: true },
   { name: "Imprint", href: "https://delta-dao.com/imprint", icon: DocumentTextIcon, external: true },

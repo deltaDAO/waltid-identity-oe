@@ -3,9 +3,9 @@
     <CloseButton />
     <div class="p-4 space-y-6">
       <div>
-        <h3 class="text-base font-semibold text-gray-900 dark:text-white">Link a login address</h3>
+        <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ title }}</h3>
         <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">
-          After linking, logging into the Enterprise market with this wallet opens this SSI wallet account.
+          {{ description }}
           Your wallet file and password stay in this browser: only a signature is sent.
         </p>
       </div>
@@ -97,9 +97,19 @@ import {isKeystoreJson, Wallet} from "ethers";
 import {MetaMaskSDK} from "@metamask/sdk";
 import {onBeforeUnmount, ref} from "vue";
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   callback: () => void;
-}>();
+  /** Endpoint that takes the signed nonce ({ challenge, signed, publicKey }) */
+  postUrl: string;
+  title?: string;
+  description?: string;
+  /** Shown when the endpoint answers 409 */
+  conflictMessage?: string;
+}>(), {
+  title: "Add an address",
+  description: "Prove that you control the address by signing a message.",
+  conflictMessage: "This address cannot be added here.",
+});
 
 const store = useModalStore();
 
@@ -150,15 +160,13 @@ async function postSignedNonce(sign: (nonce: string) => Promise<{ address: strin
   const {address, signed} = await sign(nonce);
 
   try {
-    await $fetch("/wallet-api/auth/login-addresses", {
+    await $fetch(props.postUrl, {
       method: "POST",
       body: {challenge: nonce, signed, publicKey: address},
     });
   } catch (err: any) {
     if (err?.response?.status === 409) {
-      throw new Error(
-        "This address already has its own wallet account (it has logged into the market before), so it can't be linked here.",
-      );
+      throw new Error(err?.data?.message || props.conflictMessage);
     }
     throw new Error(apiErrorMessage(err));
   }

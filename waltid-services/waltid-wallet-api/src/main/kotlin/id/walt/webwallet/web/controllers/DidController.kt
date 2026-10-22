@@ -6,6 +6,8 @@ package id.walt.webwallet.web.controllers
 import id.walt.webwallet.db.models.WalletDid
 import id.walt.webwallet.web.controllers.DidCreation.didCreate
 import id.walt.webwallet.web.controllers.auth.getWalletService
+import id.walt.webwallet.web.controllers.auth.ensurePermissionsForWallet
+import id.walt.webwallet.db.models.AccountWalletPermissions
 import id.walt.webwallet.web.model.DidImportRequest
 import io.github.smiley4.ktoropenapi.delete
 import io.github.smiley4.ktoropenapi.get
@@ -20,6 +22,12 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.uuid.ExperimentalUuidApi
+
+
+/** Rejects calls of accounts that are not admins (ADMINISTRATE) of the wallet in the path */
+private val RequireWalletAdmin = createRouteScopedPlugin("RequireWalletAdmin") {
+    onCall { call -> call.ensurePermissionsForWallet(AccountWalletPermissions.ADMINISTRATE) }
+}
 
 fun Application.dids() = walletRoute {
     route("dids", {
@@ -71,6 +79,8 @@ fun Application.dids() = walletRoute {
                     HttpStatusCode.BadRequest to { description = "DID could not be deleted" }
                 }
             }) {
+                // Only admins of the wallet may change or delete keys, DIDs and credentials
+                call.ensurePermissionsForWallet(AccountWalletPermissions.ADMINISTRATE)
                 val success = call.getWalletService().deleteDid(
                     call.parameters["did"] ?: throw IllegalArgumentException("No DID supplied")
                 )
@@ -97,6 +107,8 @@ fun Application.dids() = walletRoute {
             }
             response { HttpStatusCode.Accepted to { description = "Default DID updated" } }
         }) {
+            // Only admins of the wallet may change or delete keys, DIDs and credentials
+            call.ensurePermissionsForWallet(AccountWalletPermissions.ADMINISTRATE)
             call.getWalletService().setDefault(
                 call.parameters["did"] ?: throw IllegalArgumentException("No DID supplied")
             )
@@ -121,6 +133,8 @@ fun Application.dids() = walletRoute {
 
             }
         }) {
+            // Only admins of the wallet may create DIDs
+            install(RequireWalletAdmin)
             didCreate()
         }
 
@@ -139,6 +153,8 @@ fun Application.dids() = walletRoute {
                 HttpStatusCode.UnsupportedMediaType to { description = "Unsupported key format" }
             }
         }) {
+            // Only admins of the wallet may change or delete keys, DIDs and credentials
+            call.ensurePermissionsForWallet(AccountWalletPermissions.ADMINISTRATE)
             val req = call.receive<DidImportRequest>()
 
                 val key: Any = when (val k = req.key ?: throw BadRequestException("key is required (PEM or JWK)")) {

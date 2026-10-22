@@ -288,6 +288,7 @@ import {
     ArrowPathIcon,
     Bars3CenterLeftIcon,
     BellIcon,
+    BuildingOfficeIcon,
     DocumentTextIcon,
     ListBulletIcon,
     QuestionMarkCircleIcon,
@@ -323,6 +324,7 @@ async function reloadData() {
 
 const secondaryNavigation = [
   { name: "Select wallet", href: "/", icon: ListBulletIcon },
+  { name: "Organization", href: "/organization", icon: BuildingOfficeIcon },
   { name: "Help", href: "/help", icon: QuestionMarkCircleIcon },
   { name: "Privacy", href: "https://delta-dao.com/privacy", icon: ShieldCheckIcon, external: true },
   { name: "Imprint", href: "https://delta-dao.com/imprint", icon: DocumentTextIcon, external: true },

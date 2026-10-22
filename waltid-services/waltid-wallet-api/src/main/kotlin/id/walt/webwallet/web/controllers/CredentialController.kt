@@ -9,6 +9,8 @@ import id.walt.webwallet.service.credentials.CredentialFilterObject
 import id.walt.webwallet.usecase.credential.CredentialStatusResult
 import id.walt.webwallet.web.controllers.auth.getWalletId
 import id.walt.webwallet.web.controllers.auth.getWalletService
+import id.walt.webwallet.web.controllers.auth.ensurePermissionsForWallet
+import id.walt.webwallet.db.models.AccountWalletPermissions
 import id.walt.webwallet.web.model.CredentialImportRequest
 import id.walt.webwallet.web.parameter.CredentialRequestParameter
 import id.walt.webwallet.web.parameter.NoteRequestParameter
@@ -139,6 +141,8 @@ fun Application.credentials() = walletRoute {
                     HttpStatusCode.BadRequest to { description = "WalletCredential could not be deleted" }
                 }
             }) {
+                // Only admins of the wallet may change or delete keys, DIDs and credentials
+                call.ensurePermissionsForWallet(AccountWalletPermissions.ADMINISTRATE)
                 val credentialId = call.parameters.getOrFail("credentialId")
                 val permanent = call.request.queryParameters["permanent"].toBoolean()
                 call.respond(

@@ -11,6 +11,10 @@ services:
       context: ../../
       dockerfile: waltid-services/waltid-wallet-api/Dockerfile
     restart: unless-stopped
+    environment:
+      # One-time cleanup of personal wallets (wallets belong to organizations only), see PersonalWalletCleanup.
+      # Run once with: REMOVE_PERSONAL_WALLETS=true docker compose up -d --force-recreate wallet-api-oe
+      REMOVE_PERSONAL_WALLETS: "${REMOVE_PERSONAL_WALLETS:-false}"
     volumes:
       # Copied from waltid-services/waltid-wallet-api/config on the server (git-ignored, holds pepper and keys)
       - ./wallet-api-config:/waltid-wallet-api/config:ro

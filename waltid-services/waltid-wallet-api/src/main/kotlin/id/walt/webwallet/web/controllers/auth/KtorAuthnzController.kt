@@ -15,7 +15,6 @@ import id.walt.ktorauthnz.methods.registerAuthenticationMethod
 import id.walt.webwallet.config.KtorAuthnzConfig
 import id.walt.webwallet.db.models.Accounts
 import id.walt.webwallet.db.models.authnz.AuthnzUsers
-import id.walt.webwallet.service.account.AccountsService.initializeUserAccount
 import io.github.smiley4.ktoropenapi.route
 import io.ktor.server.application.*
 import io.ktor.server.request.*
@@ -50,7 +49,8 @@ private val web3Registration: suspend (any: Any) -> Unit = { any ->
         }[Accounts.id]
     }
 
-    initializeUserAccount(name = web3Address, registeredUserId = Uuid.parse(newAuthnzUserId))
+    // No wallet here: wallets belong to organizations. An organization admin adds this address,
+    // which creates its wallet (see OrganizationService).
 }
 
 private val authMethodFunctionAmendments: Map<AuthenticationMethod, Map<AuthMethodFunctionAmendments, suspend (Any) -> Unit>> =

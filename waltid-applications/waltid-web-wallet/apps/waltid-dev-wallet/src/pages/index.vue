@@ -50,6 +50,18 @@
           </li>
         </ul>
         <LoadingIndicator v-else />
+
+        <div
+          v-if="wallets && wallets.wallets?.length === 0"
+          class="mt-4 rounded-md bg-blue-50 p-4 text-blue-900"
+        >
+          <p class="font-semibold">You don't have access to a wallet yet.</p>
+          <p class="mt-1">
+            Wallets belong to organizations.
+            <NuxtLink class="underline font-semibold" to="/organization">Create or join an organization</NuxtLink>,
+            or ask an admin of your organization for access to a wallet.
+          </p>
+        </div>
       </div>
     </CenterMain>
   </div>
@@ -68,6 +80,15 @@ useHead({
 });
 
 const wallets = await listWallets();
+
+// Right after sign-up: no wallet and no organization yet, so ask to create or join one
+if (import.meta.client && wallets.value && wallets.value.wallets?.length === 0) {
+  $fetch("/wallet-api/organization")
+    .then((result) => {
+      if (!result?.organization) navigateTo("/organization");
+    })
+    .catch(() => {});
+}
 
 if (process.client) {
   //const worker = new Worker()

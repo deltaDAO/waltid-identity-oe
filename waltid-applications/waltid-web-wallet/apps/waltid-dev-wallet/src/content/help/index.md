@@ -1,33 +1,41 @@
 # Help
 
-This SSI wallet holds your verifiable credentials and presents them when a service asks for them, for example
+This SSI wallet holds verifiable credentials and presents them when a service asks for them, for example
 when you buy or access an asset in the Enterprise market.
 
 ## Your account
 
 - **Sign up** with your name, email address and a password of at least 8 characters.
 - **Log in** with your email address and password.
-- You can also log in with a web3 wallet. If that address is not linked to an account yet, a new account is
-  created for it.
+- After your first login, **create an organization** or **ask to join** one.
 
-## Login addresses
+## Organizations
 
-Open **Login addresses** in the menu of your wallet to connect the wallets you use in the Enterprise market.
+Wallets belong to organizations, not to single users.
 
-1. Click **Link login address**.
-2. Either choose your encrypted JSON wallet file and enter its password, or click **Link with MetaMask**.
-3. Sign the message. Your wallet file and password stay in your browser: only the signature is sent.
+- Whoever creates an organization becomes its **admin**. Admins accept or remove members and can make other
+  members admins.
+- To **join**, open the invite link from an admin, or enter the invite code or the exact name of the
+  organization under **Organization**. An admin has to accept your request.
+- **Users** open the wallets an admin gave them access to under **Select wallet**.
 
-After linking, logging into the Enterprise market with that wallet opens this SSI wallet account, with the same
-credentials. You can link several addresses, and remove them again at any time.
+## Addresses and wallets
 
-An address that already has its own wallet account (because it logged into the market before) cannot be linked.
+Admins add the organization's addresses under **Organization → Addresses and wallets**:
+
+1. Click **Add address**.
+2. Either choose the encrypted JSON wallet file and enter its password, or click **Link with MetaMask**.
+3. Sign the message. The wallet file and password stay in your browser: only the signature is sent.
+
+Each address gets its own wallet. Logging into the Enterprise market with the address opens that wallet.
+If the address has logged into the market before, its existing wallet and credentials are kept.
+Admins choose which members may use each wallet; admins can always use all of them.
 
 ## Credentials
 
 - **Request credentials** or **Scan to receive or present credentials** to receive a credential from an issuer.
 - **Import credential (JWT)** to add a credential you already have.
-- Your credentials are listed under **Credentials**.
+- Your credentials are listed under **Credentials** in a wallet.
 
 ## Contact
 

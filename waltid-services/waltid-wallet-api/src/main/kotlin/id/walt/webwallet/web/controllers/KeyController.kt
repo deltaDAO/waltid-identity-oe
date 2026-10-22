@@ -5,6 +5,8 @@ package id.walt.webwallet.web.controllers
 import id.walt.crypto.keys.KeyGenerationRequest
 import id.walt.crypto.keys.KeyType
 import id.walt.webwallet.web.controllers.auth.getWalletService
+import id.walt.webwallet.web.controllers.auth.ensurePermissionsForWallet
+import id.walt.webwallet.db.models.AccountWalletPermissions
 import io.github.smiley4.ktoropenapi.delete
 import io.github.smiley4.ktoropenapi.get
 import io.github.smiley4.ktoropenapi.post
@@ -148,6 +150,8 @@ fun Application.keys() = walletRoute {
                 }
             }
         }) {
+            // Only admins of the wallet may change or delete keys, DIDs and credentials
+            call.ensurePermissionsForWallet(AccountWalletPermissions.ADMINISTRATE)
             val keyGenerationRequest = call.receive<KeyGenerationRequest>()
 
             runCatching {
@@ -175,6 +179,8 @@ fun Application.keys() = walletRoute {
                 }
             }
         }) {
+            // Only admins of the wallet may change or delete keys, DIDs and credentials
+            call.ensurePermissionsForWallet(AccountWalletPermissions.ADMINISTRATE)
             val body = call.receiveText()
             val alias = call.request.queryParameters["alias"]
 
@@ -297,6 +303,8 @@ fun Application.keys() = walletRoute {
                     HttpStatusCode.BadRequest to { description = "Key could not be deleted" }
                 }
             }) {
+                // Only admins of the wallet may change or delete keys, DIDs and credentials
+                call.ensurePermissionsForWallet(AccountWalletPermissions.ADMINISTRATE)
                 val keyId = call.parameters.getOrFail("keyId")
 
                 val success = call.getWalletService().deleteKey(keyId)
@@ -310,6 +318,8 @@ fun Application.keys() = walletRoute {
                     HttpStatusCode.BadRequest to { description = "Failed to remove the key" }
                 }
             }) {
+                // Only admins of the wallet may change or delete keys, DIDs and credentials
+                call.ensurePermissionsForWallet(AccountWalletPermissions.ADMINISTRATE)
                 val keyId = call.parameters.getOrFail("keyId")
 
                 val success = call.getWalletService().removeKey(keyId)

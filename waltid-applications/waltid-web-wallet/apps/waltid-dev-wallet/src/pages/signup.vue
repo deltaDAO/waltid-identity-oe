@@ -259,7 +259,7 @@ async function submit() {
             nameInput +
             "! You can now login with your email address " +
             emailInput +
-            " and your chosen password.",
+            " and your chosen password. After logging in, create your organization or ask to join one.",
           isError: false,
           open: true,
           callback: () => {

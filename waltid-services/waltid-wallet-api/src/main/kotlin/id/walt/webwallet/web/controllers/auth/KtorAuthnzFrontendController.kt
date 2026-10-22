@@ -98,7 +98,7 @@ private suspend fun ktorAuthnzCreateAccount(
         throw ex
     }
 
-    AccountsService.initializeUserAccount(tenant = "", name = name, registeredUserId = newAccountId)
+    // No personal wallet: after login the user creates or joins an organization, whose admins give access to wallets
 
     return newAccountId
 }

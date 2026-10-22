@@ -11,6 +11,7 @@ import id.walt.webwallet.db.models.authnz.AuthnzAccountIdentifiers
 import id.walt.webwallet.db.models.authnz.AuthnzStoredData
 import id.walt.webwallet.db.models.authnz.AuthnzUsers
 import id.walt.webwallet.service.account.authnz.AuthenticationService
+import id.walt.webwallet.service.organization.PersonalWalletCleanup
 import id.walt.webwallet.service.account.AccountsService
 import id.walt.webwallet.web.model.EmailAccountRequest
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -77,6 +78,10 @@ object Db {
         WalletSettings,
         WalletNotifications,
         EntityNameResolutionCache,
+
+        Organizations,
+        OrganizationMembers,
+        OrganizationAddresses,
     ).toTypedArray()
 
     @OptIn(ExperimentalUuidApi::class)
@@ -134,6 +139,9 @@ object Db {
         if (FeatureManager.isFeatureEnabled(FeatureCatalog.ktorAuthnzAuthenticationFeature)) {
             AuthenticationService.migrateLegacyWeb3Identifiers()
         }
+
+        // Wallets belong to organizations only: removes old personal wallets when explicitly requested
+        PersonalWalletCleanup.runIfRequested()
     }
 
     private fun toTransactionIsolationLevel(value: String): Int = when (value) {
